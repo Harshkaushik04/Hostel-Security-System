@@ -1,5 +1,5 @@
 {
   "name": "app",
   "private":true,
-  "workspaces":["node_backend","shared"]
+  "workspaces":["node_backend","shared","frontend"]
 }
