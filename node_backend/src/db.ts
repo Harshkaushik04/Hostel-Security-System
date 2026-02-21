@@ -27,7 +27,7 @@ const invites=new mongoose.Schema<CustomTypes.db.InviteSchemaType>({
     guest_name:String,
     guest_contact_number:String
 })
-//every info on name="main"
+
 const emergencies=new mongoose.Schema<CustomTypes.db.EmergencySchemaType>({
     name:String,
     info:{
@@ -36,7 +36,14 @@ const emergencies=new mongoose.Schema<CustomTypes.db.EmergencySchemaType>({
     }
 })
 
+const hostelStudents=new mongoose.Schema<CustomTypes.db.hostelStudentsSchemaType>({
+    hostel_name:String,
+    student_name:String,
+    student_entry_number:String
+})
+
 export const UserModel=mongoose.model("users",users)
 export const AdminModel=mongoose.model("admin",admin)
 export const InviteModel=mongoose.model("invites",invites)
 export const EmergencyModel=mongoose.model("emergencies",emergencies)
+export const hostelStudentsModel=mongoose.model("hostelStudents",hostelStudents)
