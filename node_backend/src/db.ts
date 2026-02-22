@@ -12,7 +12,9 @@ const MONGO_URL=process.env.MONGO_URL
 const users=new mongoose.Schema<CustomTypes.db.UsersSchemaType>({ 
     name:String,
     email:String,
-    password:String
+    password:String,
+    entry_number:String,
+    hostel_name:String
 })
 
 const admin=new mongoose.Schema<CustomTypes.db.AdminSchemaType>({
@@ -36,14 +38,8 @@ const emergencies=new mongoose.Schema<CustomTypes.db.EmergencySchemaType>({
     }
 })
 
-const hostelStudents=new mongoose.Schema<CustomTypes.db.hostelStudentsSchemaType>({
-    hostel_name:String,
-    student_name:String,
-    student_entry_number:String
-})
 
 export const UserModel=mongoose.model("users",users)
 export const AdminModel=mongoose.model("admin",admin)
 export const InviteModel=mongoose.model("invites",invites)
 export const EmergencyModel=mongoose.model("emergencies",emergencies)
-export const hostelStudentsModel=mongoose.model("hostelStudents",hostelStudents)

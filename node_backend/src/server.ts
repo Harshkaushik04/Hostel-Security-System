@@ -4,7 +4,7 @@ import { Request,Response,NextFunction } from "express"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import {z} from "zod"
 import jwt from "jsonwebtoken"
-import { UserModel,AdminModel,InviteModel,EmergencyModel, hostelStudentsModel } from "./db.js"
+import { UserModel,AdminModel,InviteModel,EmergencyModel } from "./db.js"
 import bcrypt from "bcrypt"
 import dotenv from "dotenv"
 import path from "path"
@@ -60,7 +60,7 @@ function authMiddleware(req:Request,res:Response,next:NextFunction){
 //     })
 // })
 
-app.post("/student-sign-in",async (req:Request,res:Response)=>{
+app.post("/student-sign-in",async(req:Request,res:Response)=>{
     console.log(`entered [student-sign-in]`)
     const studentSignInRequestCheck=CustomSchemas.auth.SignInRequestSchema.safeParse(req.body)
     if(!studentSignInRequestCheck.success){
@@ -376,7 +376,7 @@ app.get("/emergencies",async (req:Request,res:Response)=>{
     }
 })
 
-app.get("/add-hostel",async (req:Request,res:Response)=>{
+app.post("/add-hostel",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.AddHostelRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
         return res.send({
@@ -386,7 +386,7 @@ app.get("/add-hostel",async (req:Request,res:Response)=>{
     }
     else{
         const reqBody:CustomTypes.manageUsers.AddHostelRequestType=req.body
-        const hostelRow=await hostelStudentsModel.findOne({
+        const hostelRow=await UserModel.findOne({
             hostel_name:reqBody.hostel_name
         })
         if(hostelRow){
@@ -396,10 +396,12 @@ app.get("/add-hostel",async (req:Request,res:Response)=>{
             })
         }
         else{
-            await hostelStudentsModel.create({
+            await UserModel.create({
                 hostel_name:reqBody.hostel_name,
-                student_name:process.env.HOSTEL_NAME_SECRET,
-                student_entry_number:process.env.HOSTEL_ENTRY_NUMBER_SECRET
+                name:process.env.NAME_SECRET,
+                entry_number:process.env.ENTRY_NUMBER_SECRET,
+                password:process.env.PASSWORD_SECRET,
+                email:process.env.EMAIL_SECRET
             })
             return res.send({
                 approved:true
@@ -408,10 +410,12 @@ app.get("/add-hostel",async (req:Request,res:Response)=>{
     }
 })
 
-app.get("/get-hostels-list",async(req:Request,res:Response)=>{
-    const docs=await hostelStudentsModel.find({
-        student_name:process.env.HOSTEL_SECRET_NAME,
-        student_entry_number:process.env.HOSTEL_SECRET_ENTRY_NUMBER
+app.post("/get-hostels-list",async(req:Request,res:Response)=>{
+    const docs=await UserModel.find({
+        name:process.env.NAME_SECRET,
+        entry_number:process.env.ENTRY_NUMBER_SECRET,
+        password:process.env.PASSWORD_SECRET,
+        email:process.env.EMAIL_SECRET
     })
     let hostelsList:string[]=[]
     for(const doc of docs){
@@ -422,7 +426,7 @@ app.get("/get-hostels-list",async(req:Request,res:Response)=>{
     })
 })
 
-app.get("/get-hostel-students-list",async (req:Request,res:Response)=>{
+app.post("/get-hostel-students-list",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.GetHostelStudentsListRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
         return res.send({
@@ -432,15 +436,73 @@ app.get("/get-hostel-students-list",async (req:Request,res:Response)=>{
     }
     else{
         const reqBody:CustomTypes.manageUsers.GetHostelStudentsListRequestType=req.body
-        const docs=await hostelStudentsModel.find({
+        const docs=await UserModel.find({
             hostel_name:reqBody.hostel_name
         }).skip(reqBody.start-1).limit(reqBody.num_students)
         let studentsList:string[][]=[]
         for(const doc of docs){
-            studentsList.push([doc.student_name,doc.student_entry_number])
+            if(doc.name!=process.env.NAME_SECRET){
+                studentsList.push([doc.name,doc.entry_number,doc.email])
+            }
         }
         return res.json({
             studentsList:studentsList
+        })
+    }
+})
+
+app.post("/get-admin-users-list",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.GetAdminUsersListRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.manageUsers.GetAdminUsersListRequestType=req.body
+        const docs=await AdminModel.find({
+            privelege:reqBody.admin_privelege_name
+        }).skip(reqBody.start-1).limit(reqBody.num_users)
+        let usersList:string[][]=[]
+        for(const doc of docs){
+            usersList.push([doc.name,doc.email])
+        }
+        return res.send({
+            usersList:usersList
+        })
+    }
+})
+
+app.post("/upload-manually",async(req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.UploadManuallyAdminRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.manageUsers.UploadManuallyRequestType=req.body
+        if(reqBody.type=="student"){
+            await UserModel.create({
+                name:reqBody.name,
+                entry_number:reqBody.entry_number,
+                hostel_name:reqBody.hostel_name,
+                email:reqBody.email,
+                password:reqBody.password
+            })
+        }
+        else{
+            await AdminModel.create({
+                name:reqBody.name,
+                email:reqBody.email,
+                password:reqBody.password,
+                privelege:reqBody.privelege
+            })
+        }
+        return res.send({
+            approved:true
         })
     }
 })

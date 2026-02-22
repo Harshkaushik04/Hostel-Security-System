@@ -1,7 +1,9 @@
 export type UsersSchemaType={
     name:string,
     email:string,
-    password:string
+    password:string,
+    entry_number:string,
+    hostel_name:string
 }
 
 export type AdminSchemaType={
@@ -20,10 +22,4 @@ export type InviteSchemaType={
 export type EmergencySchemaType={
     name:string,
     info:Record<string,string>
-}
-
-export type hostelStudentsSchemaType={
-    hostel_name:string,
-    student_name:string,
-    student_entry_number:string
 }
