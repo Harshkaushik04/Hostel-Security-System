@@ -423,7 +423,26 @@ app.get("/get-hostels-list",async(req:Request,res:Response)=>{
 })
 
 app.get("/get-hostel-students-list",async (req:Request,res:Response)=>{
-    
+    const reqCheck = CustomSchemas.manageUsers.GetHostelStudentsListRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.manageUsers.GetHostelStudentsListRequestType=req.body
+        const docs=await hostelStudentsModel.find({
+            hostel_name:reqBody.hostel_name
+        }).skip(reqBody.start-1).limit(reqBody.num_students)
+        let studentsList:string[][]=[]
+        for(const doc of docs){
+            studentsList.push([doc.student_name,doc.student_entry_number])
+        }
+        return res.json({
+            studentsList:studentsList
+        })
+    }
 })
 
 app.listen(3000,()=>{
