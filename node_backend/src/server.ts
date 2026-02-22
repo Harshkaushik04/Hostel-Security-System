@@ -4,7 +4,7 @@ import { Request,Response,NextFunction } from "express"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import {z} from "zod"
 import jwt from "jsonwebtoken"
-import { UserModel,AdminModel,InviteModel,EmergencyModel } from "./db.js"
+import { UserModel,AdminModel,InviteModel,EmergencyModel, hostelStudentsModel } from "./db.js"
 import bcrypt from "bcrypt"
 import dotenv from "dotenv"
 import path from "path"
@@ -332,7 +332,7 @@ app.post("/invite", async(req:Request,res:Response)=>{
     if(!inviteCheck.success){
         return res.send({
             approved:false,
-            error:"request schema invalid"
+            error:`request schema invalid\n${inviteCheck.error}`
         })
     }
     else{
@@ -372,6 +372,75 @@ app.get("/emergencies",async (req:Request,res:Response)=>{
     else{
         return res.send({
             info:emergencies.info
+        })
+    }
+})
+
+app.get("/add-hostel",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.AddHostelRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema invalid\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.manageUsers.AddHostelRequestType=req.body
+        const hostelRow=await hostelStudentsModel.findOne({
+            hostel_name:reqBody.hostel_name
+        })
+        if(hostelRow){
+            return res.send({
+                approved:false,
+                error:"duplicate hostel"
+            })
+        }
+        else{
+            await hostelStudentsModel.create({
+                hostel_name:reqBody.hostel_name,
+                student_name:process.env.HOSTEL_NAME_SECRET,
+                student_entry_number:process.env.HOSTEL_ENTRY_NUMBER_SECRET
+            })
+            return res.send({
+                approved:true
+            })
+        }
+    }
+})
+
+app.get("/get-hostels-list",async(req:Request,res:Response)=>{
+    const docs=await hostelStudentsModel.find({
+        student_name:process.env.HOSTEL_SECRET_NAME,
+        student_entry_number:process.env.HOSTEL_SECRET_ENTRY_NUMBER
+    })
+    let hostelsList:string[]=[]
+    for(const doc of docs){
+        hostelsList.push(doc.hostel_name)
+    }
+    return res.send({
+        hostelsList:hostelsList
+    })
+})
+
+app.get("/get-hostel-students-list",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.GetHostelStudentsListRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.manageUsers.GetHostelStudentsListRequestType=req.body
+        const docs=await hostelStudentsModel.find({
+            hostel_name:reqBody.hostel_name
+        }).skip(reqBody.start-1).limit(reqBody.num_students)
+        let studentsList:string[][]=[]
+        for(const doc of docs){
+            studentsList.push([doc.student_name,doc.student_entry_number])
+        }
+        return res.json({
+            studentsList:studentsList
         })
     }
 })

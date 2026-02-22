@@ -21,3 +21,9 @@ export type EmergencySchemaType={
     name:string,
     info:Record<string,string>
 }
+
+export type hostelStudentsSchemaType={
+    hostel_name:string,
+    student_name:string,
+    student_entry_number:string
+}
