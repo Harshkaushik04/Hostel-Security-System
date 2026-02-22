@@ -466,7 +466,9 @@ app.post("/get-admin-users-list",async (req:Request,res:Response)=>{
         }).skip(reqBody.start-1).limit(reqBody.num_users)
         let usersList:string[][]=[]
         for(const doc of docs){
-            usersList.push([doc.name,doc.email])
+            if(doc.name!=process.env.NAME_SECRET){
+                usersList.push([doc.name,doc.email])
+            }
         }
         return res.send({
             usersList:usersList
@@ -484,20 +486,21 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
     }
     else{
         const reqBody:CustomTypes.manageUsers.UploadManuallyRequestType=req.body
+        const hashed_password = await bcrypt.hash(reqBody.password,5)
         if(reqBody.type=="student"){
             await UserModel.create({
                 name:reqBody.name,
                 entry_number:reqBody.entry_number,
                 hostel_name:reqBody.hostel_name,
                 email:reqBody.email,
-                password:reqBody.password
+                password:hashed_password
             })
         }
         else{
             await AdminModel.create({
                 name:reqBody.name,
                 email:reqBody.email,
-                password:reqBody.password,
+                password:hashed_password,
                 privelege:reqBody.privelege
             })
         }
