@@ -53,21 +53,39 @@ export async function getPastRecording(params: Record<string, string>) {
 
 // Manage: hostels & admin list
 export async function getHostelsList(params: { hostel_name?: string }) {
+  // Backend currently ignores body but frontend may send optional hostel_name filter.
   return apiFetch<unknown>('/get-hostels-list', { method: 'POST', json: params })
 }
-export async function getHostelList(params: {
+
+export type GetHostelStudentsListBody = {
   hostel_name: string
-  from: number
-  to: number
-}) {
-  return apiFetch<unknown>('/get-hostel-list', { method: 'POST', json: params })
+  start: number
+  num_students: number
 }
-export async function getAdminList(params: {
-  admin_privilege_name: string
-  from: number
-  to: number
-}) {
-  return apiFetch<unknown>('/get-admin-list', { method: 'POST', json: params })
+
+export async function getHostelList(body: GetHostelStudentsListBody) {
+  // [express] post /get-hostel-students-list inputs:(hostel_name,start,num_students)
+  return apiFetch<unknown>('/get-hostel-students-list', { method: 'POST', json: body })
+}
+
+export type AdminPrivilegeApiValue = 'super_user' | 'top_privelege' | 'gaurd'
+
+export type GetAdminUsersListBody = {
+  admin_privelege_name: AdminPrivilegeApiValue
+  start: number
+  num_users: number
+}
+
+export async function getAdminList(body: GetAdminUsersListBody) {
+  // [express] post /get-admin-users-list inputs:(admin_previlege_name,start,num_users)
+  return apiFetch<unknown>('/get-admin-users-list', { method: 'POST', json: body })
+}
+
+// Manage: add hostel
+export type AddHostelBody = { hostel_name: string }
+export async function addHostel(body: AddHostelBody) {
+  // [express] post /add-hostel inputs:(hostel_name)
+  return apiFetch<unknown>('/add-hostel', { method: 'POST', json: body })
 }
 
 // Manage: add/delete/edit (upload)

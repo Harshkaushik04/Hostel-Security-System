@@ -15,8 +15,15 @@ export default function StudentSignIn() {
     setError('')
     setLoading(true)
     try {
-      const data = await studentSignIn({ email, password }) as { valid?: boolean; error?: string }
+      const data = await studentSignIn({ email, password }) as {
+        valid?: boolean
+        error?: string
+        token?: string
+      }
       if (data?.valid) {
+        if (typeof window !== 'undefined' && data.token) {
+          window.localStorage.setItem('token', data.token)
+        }
         navigate('/invite', { replace: true })
       } else {
         setError(data?.error ?? 'Login failed')
