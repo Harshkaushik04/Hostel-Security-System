@@ -15,8 +15,15 @@ export default function AdminSignIn() {
     setError('')
     setLoading(true)
     try {
-      const data = await adminSignIn({ email, password }) as { valid?: boolean; error?: string }
+      const data = await adminSignIn({ email, password }) as {
+        valid?: boolean
+        error?: string
+        token?: string
+      }
       if (data?.valid) {
+        if (typeof window !== 'undefined' && data.token) {
+          window.localStorage.setItem('token', data.token)
+        }
         navigate('/admin', { replace: true })
       } else {
         setError(data?.error ?? 'Login failed')

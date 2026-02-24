@@ -11,6 +11,15 @@ export async function apiFetch<T>(
   const headers: HeadersInit = {
     ...(init.headers as HeadersInit),
   }
+
+  // Attach JWT token if available (protected endpoints after sign-in)
+  if (typeof window !== 'undefined') {
+    const token = window.localStorage.getItem('token')
+    if (token) {
+      ;(headers as Record<string, string>).token = token
+    }
+  }
+
   if (json !== undefined) {
     (headers as Record<string, string>)['Content-Type'] = 'application/json'
     init.body = JSON.stringify(json)
