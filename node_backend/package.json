@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "npx tsx watch src/server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "seed-admin": "npx tsx scripts/seed-admin.ts"
   },
   "keywords": [],
   "author": "",
