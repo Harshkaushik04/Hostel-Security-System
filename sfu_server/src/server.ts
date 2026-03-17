@@ -47,7 +47,7 @@ async function run() {
                 clockRate: 90000,
                 parameters: {
                     'packetization-mode': 1,
-                    'profile-level-id': '42e01f',
+                    'profile-level-id': '42e028',
                     'level-asymmetry-allowed': 1
                 }
             }
@@ -78,7 +78,7 @@ async function run() {
                     payloadType: 112,
                     parameters: { 
                         'packetization-mode': 1,
-                        'profile-level-id': '42e01f',
+                        'profile-level-id': '42e028',
                         'level-asymmetry-allowed': 1
                     }
                 }
