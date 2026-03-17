@@ -1,6 +1,6 @@
 import {CustomSchemas} from  "../index.js"
 import {z} from "zod"
-import {JwtPayload} from "jsonwebtoken"
+import type{JwtPayload} from "jsonwebtoken"
 
 export type SignInWrongResponseType = z.infer<typeof CustomSchemas.auth.SignInWrongResponseSchema>
 export type SignInRightResponseType = z.infer<typeof CustomSchemas.auth.SignInRightResponseSchema>
