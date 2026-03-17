@@ -12,3 +12,6 @@ go into sfu_server folder and run using "npm run dev"
 run incerceptor between mediaMTX server and sfu server:
 
 ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/camera1 -c:v copy -payload_type 112 -ssrc 2222 -pkt_size 1200 -f rtp rtp://127.0.0.1:42317
+
+run frontend on port 5173:
+go into dummy_frontend folder and run "npm run dev"
