@@ -1,0 +1,1 @@
+ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/livecam -c:v copy -payload_type 112 -ssrc 2222 -f rtp rtp://127.0.0.1:<YOUR_NEW_RTP_PORT>
