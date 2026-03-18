@@ -102,6 +102,7 @@ async function run() {
             '-c:v', 'copy', 
             '-ssrc', '2222',
             '-payload_type', '112',
+            '-bsf:v', 'dump_extra=freq=keyframe',
             '-f', 'rtp',
             '-pkt_size', '1200',
             `rtp://${plainTransport!.tuple.localIp}:${plainTransport!.tuple.localPort}?localrtpport=33333`
