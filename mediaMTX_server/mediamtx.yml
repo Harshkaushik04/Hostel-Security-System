@@ -790,7 +790,8 @@ paths:
   # example:
   # my_camera:
   #   source: rtsp://my_camera
-
+  runOnReady: curl http://127.0.0.1:2500/stream-started?name=$MTX_PATH
+  runOnNotReady: curl http://127.0.0.1:2500/stream-stopped?name=$MTX_PATH
   # Settings under path "all_others" are applied to all paths that
   # do not match another entry.
   all_others:

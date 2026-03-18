@@ -24,7 +24,8 @@ export const afterCanConsumeParamsSchema=z.object({
     id:z.string(),
     kind:z.any(),
     producerId:z.string(),
-    rtpParameters:z.any()
+    rtpParameters:z.any(),
+    cameraName:z.string()
 })
 
 export const invitationToConsumeToFrontendSchema=z.object({
@@ -53,7 +54,8 @@ export const sendDeviceRtpCapabilitiesToBackendSchema=z.object({
 })
 
 export const consumerResumeToBackendSchema=z.object({
-    type:z.literal("consumer-resume")
+    type:z.literal("consumer-resume"),
+    cameraName:z.string()
 })
 
 export const wsMessageToBackendSchema=z.union([getRtpCapabilitiesToBackendSchema,errMessageSchema,createWebrtcTransportToBackendSchema,transportRecvConnectToBackendSchema,sendDeviceRtpCapabilitiesToBackendSchema,consumerResumeToBackendSchema])
