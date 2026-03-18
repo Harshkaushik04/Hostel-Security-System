@@ -34,6 +34,7 @@ const initialSsrc=2000;
 const initialRtpPort=30000;
 
 let streamRegistry:Map<string,CustomTypes.sfu.streamDetailsType>=new Map<string,CustomTypes.sfu.streamDetailsType>();
+let clients:Set<WebSocket>=new Set<WebSocket>();
 
 async function run() {
     console.log("Starting Mediasoup Worker...");
@@ -76,7 +77,18 @@ async function run() {
     })
     wss.on("connection",async (ws:WebSocket)=>{
         console.log("connection");
+        clients.add(ws);
         let consumerTransport:mediasoup.types.WebRtcTransport<mediasoup.types.AppData>|null=null;
+        // if(!router){
+        //     console.log("router is null");
+        //     return;
+        // }
+        // console.log("[get-rtp-capabilities]")
+        // const send_message:CustomTypes.sfu.getRtpCapabilitiesToFrontendTypeActual={
+        //     type:"get-rtp-capabilities",
+        //     rtpCapabilities:router.rtpCapabilities
+        // }
+        // ws.send(JSON.stringify(send_message));
         ws.on("message",async (msg:WebSocket.RawData)=>{
             const recv_message=JSON.parse(msg.toString());
             const whetherCorrect=CustomSchemas.sfu.wsMessageToBackendSchema.safeParse(recv_message);
@@ -95,15 +107,7 @@ async function run() {
                     console.log("router is null");
                     return;
                 }
-                if(json_message.type=="get-rtp-capabilities"){
-                    console.log("[get-rtp-capabilities]")
-                    const send_message:CustomTypes.sfu.getRtpCapabilitiesToFrontendTypeActual={
-                        type:"get-rtp-capabilities",
-                        rtpCapabilities:router.rtpCapabilities
-                    }
-                    ws.send(JSON.stringify(send_message));
-                }
-                else if(json_message.type=="create-webrtc-transport"){
+                if(json_message.type=="create-webrtc-transport"){
                     console.log("[create-webrtc-transport]")
                     const webRtcTransport_options = {
                         listenIps: [
@@ -232,6 +236,7 @@ async function run() {
         })
         ws.on('close', () => {
             consumerTransport?.close();
+            clients.delete(ws);
         });
     })
     
@@ -270,7 +275,7 @@ async function run() {
                 '-bsf:v', 'dump_extra=freq=keyframe',
                 '-f', 'rtp',
                 '-pkt_size', '1200',
-                `rtp://${plainTransport!.tuple.localIp}:${plainTransport!.tuple.localPort}?localrtpport=${assignedRtpPort}`
+                `rtp://${plainTransport!.tuple.localIp}:${plainTransport!.tuple.localPort}`
             ];
 
             let ffmpegProcess:ChildProcess = spawn('ffmpeg', ffmpegArgs);
@@ -311,14 +316,20 @@ async function run() {
 
         console.log(`\nProducer created! ID: ${producer.id}`);
 
-        setInterval(async () => {
-            if(!producer){
-                console.log("producer is null");
+        const statsInterval=setInterval(async () => {
+            if(!producer || producer.closed){
+                clearInterval(statsInterval); // Kill this zombie loop permanently
                 return;
             }
-            const stats = await producer.getStats();
-            const byteCount = stats[0]?.byteCount || 0;
-            console.log(`[${cameraName}] Bytes received: ${byteCount}`);
+            try {
+                const stats = await producer.getStats();
+                const byteCount = stats[0]?.byteCount || 0;
+                console.log(`[${cameraName}] Bytes received: ${byteCount}`);
+            } catch (error: any) {
+                // 3. Catch race-condition errors so they don't crash the server
+                console.log(`[${cameraName}] Dropping stats request: ${error.message}`);
+                clearInterval(statsInterval);
+            }
         }, 3000);
         let streamDetails:CustomTypes.sfu.streamDetailsType={
             ffmpeg:ffmpegProcess,
@@ -329,6 +340,14 @@ async function run() {
         }
         streamRegistry.set(cameraName,streamDetails);
         counter++;
+        for(const ws of clients){
+            console.log("[get-rtp-capabilities]")
+            const send_message:CustomTypes.sfu.getRtpCapabilitiesToFrontendTypeActual={
+                type:"get-rtp-capabilities",
+                rtpCapabilities:router.rtpCapabilities
+            }
+            ws.send(JSON.stringify(send_message));
+        }
         res.sendStatus(200);
     })
     app.get("/stream-stopped",(req,res)=>{

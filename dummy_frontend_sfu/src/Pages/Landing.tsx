@@ -8,25 +8,26 @@ export function Landing(){
     const [device,setDevice]=useState<mediasoupClient.types.Device|null>(null);
     const [consumerTransport,setConsumerTransport]=useState<mediasoupClient.types.Transport<mediasoupClient.types.AppData>|null>(null);
     const numCameras=10;
-    let mpp:Map<number,CustomTypes.sfu.videoDetailsType>=new Map<number,CustomTypes.sfu.videoDetailsType>();
-    let videosRegistry:React.RefObject<Map<number,CustomTypes.sfu.videoDetailsType>|null>=createRef<Map<number,CustomTypes.sfu.videoDetailsType>>();
-    let actualVideoRegistry:Map<number,CustomTypes.sfu.videoDetailsType>|null=videosRegistry.current;
-    actualVideoRegistry=new Map<number,CustomTypes.sfu.videoDetailsType>();
+    const mpp:Map<number,CustomTypes.sfu.videoDetailsType>=new Map<number,CustomTypes.sfu.videoDetailsType>();
+    let videosRegistry:React.RefObject<Map<number,CustomTypes.sfu.videoDetailsType>|null>=useRef<Map<number,CustomTypes.sfu.videoDetailsType>>(mpp);
+    let actualVideoRegistry=videosRegistry.current;
     const [render,setRender]=useState<boolean>(false);
     function forceRender(){
         if(render) setRender(false);
         else setRender(true);
     }
-    for(let i=0;i<numCameras;i++){
-        let remoteVideoRef:React.RefObject<HTMLVideoElement|null>=useRef<HTMLVideoElement>(null);
-        let cameraNumber:number=i+1;
-        if(!actualVideoRegistry){
-            console.log("actualVideoRegistry is null");
-            return;
+    if(actualVideoRegistry && actualVideoRegistry.size===0){
+        for(let i=0;i<numCameras;i++){
+            let remoteVideoRef:React.RefObject<HTMLVideoElement|null>=createRef<HTMLVideoElement>();
+            let cameraNumber:number=i+1;
+            if(!actualVideoRegistry){
+                console.log("actualVideoRegistry is null");
+                return <></>
+            }
+            actualVideoRegistry.set(cameraNumber,{
+                videoRef:remoteVideoRef
+            });
         }
-        actualVideoRegistry.set(cameraNumber,{
-            videoRef:remoteVideoRef
-        });
     }
     function pressButton(){
         setButtonPressed(true);
@@ -170,10 +171,11 @@ export function Landing(){
     },[socket,device,consumerTransport])
     return(<>
         <button disabled={buttonPressed} onClick={pressButton}>recieve video</button>
-        {actualVideoRegistry?Array.from(actualVideoRegistry.entries())
-        .filter(([_, d]) => d.video)
+        {actualVideoRegistry ? Array.from(actualVideoRegistry.entries())
+        // Removed the filter so refs are always mounted!
         .map(([id, d]) => (
-            <video key={id} ref={d.videoRef} autoPlay playsInline />
-        )):null}
+            <video key={id} ref={d.videoRef} muted autoPlay playsInline 
+                   style={{ display: d.video ? "block" : "none" }} /> // Hide if empty
+        )) : null}
     </>)
 }
