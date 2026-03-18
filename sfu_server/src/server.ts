@@ -2,6 +2,7 @@ import * as mediasoup from 'mediasoup';
 import WebSocket, { WebSocketServer } from 'ws';
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import * as os from 'os';
+import {spawn,ChildProcess} from "child_process"
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -16,6 +17,7 @@ function getLocalIp() {
     return '127.0.0.1'; // Fallback
 }
 
+// const LAN_IP = "10.230.170.57";
 const LAN_IP = getLocalIp();
 console.log(`[NETWORK] Mediasoup will announce IP: ${LAN_IP}`);
 
@@ -63,11 +65,69 @@ async function run() {
         comedia: true  // We know the exact IP sending the data, no need to auto-detect
     });
 
-    console.log(`\n=== INGESTION PORT OPEN ===`);
+    console.log(`=== INGESTION PORT OPEN ===`);
     console.log(`Send RTP Video to IP: ${plainTransport.tuple.localIp}`);
     console.log(`Send RTP Video to Port: ${plainTransport.tuple.localPort}`);
     console.log(`Send RTCP Telemetry to Port: ${plainTransport.rtcpTuple?.localPort}`);
     console.log(`===========================\n`);
+    let ffmpegProcess: ChildProcess | null = null;
+    let restartTimeout: NodeJS.Timeout | null = null;
+    let isSpawning = false;
+
+    function startFFmpegBridge() {
+        if (isSpawning) {
+            console.log("Already trying to spawn FFmpeg, skipping...");
+            return;
+        }
+        isSpawning = true;
+        if (restartTimeout) {
+            clearTimeout(restartTimeout);
+            restartTimeout = null;
+        }
+        if (ffmpegProcess) {
+            console.log("Executing lingering FFmpeg process before respawning...");
+            try {
+                ffmpegProcess.kill('SIGKILL'); 
+            } catch (e) {
+                console.log("Error killing old process, moving on.");
+            }
+            ffmpegProcess = null;
+        }
+
+        console.log("Spawning strictly ONE internal FFmpeg bridge...");
+
+        const ffmpegArgs = [
+            '-rtsp_transport', 'tcp',
+            '-i', 'rtsp://localhost:8554/camera1',
+            '-c:v', 'copy', 
+            '-ssrc', '2222',
+            '-payload_type', '112',
+            '-f', 'rtp',
+            '-pkt_size', '1200',
+            `rtp://${plainTransport!.tuple.localIp}:${plainTransport!.tuple.localPort}?localrtpport=33333`
+        ];
+
+        ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
+
+        ffmpegProcess.stderr?.on('data', (data) => {
+            const log = data.toString();
+            if (log.includes('Error') || log.includes('Failed') || log.includes('Connection refused')) {
+                console.log(`[FFMPEG ALERT]: ${log.trim()}`);
+            }
+        });
+
+        ffmpegProcess.on('close', (code) => {
+            console.log(`FFmpeg died (Code: ${code}). Queuing single restart in 3 seconds...`);
+            ffmpegProcess = null; 
+            if (restartTimeout) clearTimeout(restartTimeout);
+            restartTimeout = setTimeout(() => {
+                startFFmpegBridge(); 
+            }, 3000);
+        });
+        isSpawning = false; 
+    }
+    startFFmpegBridge();
+
     producer = await plainTransport.produce({
         kind: 'video',
         rtpParameters: {
@@ -235,6 +295,7 @@ async function run() {
                         }
                         ws.send(JSON.stringify(send_message));
                     }
+                    else console.log("cant consume")
                 }
                 else if(json_message.type=="consumer-resume"){
                     console.log("[consumer-resume]")

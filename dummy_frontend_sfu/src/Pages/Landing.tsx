@@ -117,6 +117,6 @@ export function Landing(){
     },[socket,device,consumerTransport])
     return(<>
         <button disabled={buttonPressed} onClick={pressButton}>recieve video</button>
-        <video ref={remoteVideoRef} autoPlay playsInline/>
+        <video ref={remoteVideoRef} autoPlay muted playsInline/>
     </>)
 }
