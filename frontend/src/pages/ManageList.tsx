@@ -7,7 +7,8 @@ import {
   addHostel,
   type AdminPrivilegeApiValue,
 } from '../api/endpoints'
-import { layout, card, primaryButton, secondaryButton, inputStyle } from '../styles/common'
+import collegeLogo from '../assets/IIT ROPAR.png'
+import { layout, card, primaryButton, secondaryButton, inputStyle, logoCircle } from '../styles/common'
 
 type Tab = 'hostels' | 'admin'
 const ADMIN_PRIVILEGES: { label: string; value: AdminPrivilegeApiValue }[] = [
@@ -108,105 +109,122 @@ export default function ManageList() {
   return (
     <div style={layout}>
       <div style={card}>
-        <Link to="/admin" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back to Admin</Link>
-        <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>
-          Manage students / admin list
-        </h1>
-        <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>
-          Hostels or Admin privileges. get-hostels-list, get-hostel-list, get-admin-list (range k1–k2).
-        </p>
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
-          <button type="button" style={tab === 'hostels' ? primaryButton : secondaryButton} onClick={() => setTab('hostels')}>Hostels</button>
-          <button type="button" style={tab === 'admin' ? primaryButton : secondaryButton} onClick={() => setTab('admin')}>Admin</button>
-        </div>
-        {tab === 'hostels' && (
-          <>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ fontSize: '0.9rem', color: '#e5e7eb' }}>Hostel name filter </label>
-              <input type="text" style={{ ...inputStyle, maxWidth: 300 }} value={hostelName} onChange={(e) => setHostelName(e.target.value)} placeholder="Optional" />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 0.7fr)',
+            columnGap: '3rem',
+            alignItems: 'flex-start',
+          }}
+        >
+          {/* Left: all controls and buttons */}
+          <div>
+            <Link to="/admin" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back to Admin</Link>
+            <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>
+              Manage students / admin list
+            </h1>
+            <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>
+              Hostels or Admin privileges. get-hostels-list, get-hostel-list, get-admin-list (range k1–k2).
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+              <button type="button" style={tab === 'hostels' ? primaryButton : secondaryButton} onClick={() => setTab('hostels')}>Hostels</button>
+              <button type="button" style={tab === 'admin' ? primaryButton : secondaryButton} onClick={() => setTab('admin')}>Admin</button>
             </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ fontSize: '0.9rem', color: '#e5e7eb', display: 'block', marginBottom: '0.25rem' }}>
-                Add hostel
-              </label>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  style={{ ...inputStyle, maxWidth: 260 }}
-                  placeholder="New hostel name"
-                  value={newHostel}
-                  onChange={(e) => setNewHostel(e.target.value)}
-                />
-                <button
-                  type="button"
-                  style={primaryButton}
-                  onClick={handleAddHostel}
-                  disabled={addingHostel}
-                >
-                  {addingHostel ? 'Adding…' : 'Add hostel'}
-                </button>
+            {tab === 'hostels' && (
+              <>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ fontSize: '0.9rem', color: '#e5e7eb' }}>Hostel name filter </label>
+                  <input type="text" style={{ ...inputStyle, maxWidth: 300 }} value={hostelName} onChange={(e) => setHostelName(e.target.value)} placeholder="Optional" />
+                </div>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ fontSize: '0.9rem', color: '#e5e7eb', display: 'block', marginBottom: '0.25rem' }}>
+                    Add hostel
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      style={{ ...inputStyle, maxWidth: 260 }}
+                      placeholder="New hostel name"
+                      value={newHostel}
+                      onChange={(e) => setNewHostel(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      style={primaryButton}
+                      onClick={handleAddHostel}
+                      disabled={addingHostel}
+                    >
+                      {addingHostel ? 'Adding…' : 'Add hostel'}
+                    </button>
+                  </div>
+                </div>
+                {loading && <p style={{ color: '#9ca3af' }}>Loading…</p>}
+                {error && <p style={{ color: '#f87171' }}>{error}</p>}
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  {hostels.map((h) => (
+                    <button key={h} type="button" style={secondaryButton} onClick={() => loadHostelUsers(h)}>{h}</button>
+                  ))}
+                </div>
+              </>
+            )}
+            {tab === 'admin' && (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                {ADMIN_PRIVILEGES.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    style={secondaryButton}
+                    onClick={() => loadAdminUsers(p.label, p.value)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
+            )}
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.9rem', color: '#e5e7eb' }}>Start (1-based)</label>
+              <input
+                type="number"
+                style={{ ...inputStyle, width: 80, marginRight: '0.5rem' }}
+                min={1}
+                value={startK}
+                onChange={(e) => setStartK(Number(e.target.value) || 1)}
+              />
+              <label style={{ fontSize: '0.9rem', color: '#e5e7eb', marginRight: '0.5rem' }}>Count</label>
+              <input
+                type="number"
+                style={{ ...inputStyle, width: 80 }}
+                min={1}
+                value={countK}
+                onChange={(e) => setCountK(Number(e.target.value) || 1)}
+              />
             </div>
-            {loading && <p style={{ color: '#9ca3af' }}>Loading…</p>}
-            {error && <p style={{ color: '#f87171' }}>{error}</p>}
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-              {hostels.map((h) => (
-                <button key={h} type="button" style={secondaryButton} onClick={() => loadHostelUsers(h)}>{h}</button>
-              ))}
+            {(selectedHostel || selectedPrivilege) && (
+              <>
+                {loading && <p style={{ color: '#9ca3af' }}>Loading users…</p>}
+                <ul style={{ listStyle: 'none', padding: 0 }}>
+                  {users.map((u, i) => (
+                    <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <span style={{ flex: 1 }}>
+                        {selectedHostel
+                          ? `${u[0] ?? ''} (${u[1] ?? ''}) — ${u[2] ?? ''}`
+                          : `${u[0] ?? ''} — ${u[1] ?? ''}`}
+                      </span>
+                      <Link to="/admin/manage/edit" style={{ ...secondaryButton, textDecoration: 'none' }}>Edit</Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <div style={{ marginTop: '1.5rem' }}>
+              <Link to="/admin/manage/edit" style={{ ...primaryButton, textDecoration: 'none' }}>Add / Delete / Edit users →</Link>
             </div>
-          </>
-        )}
-        {tab === 'admin' && (
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-            {ADMIN_PRIVILEGES.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                style={secondaryButton}
-                onClick={() => loadAdminUsers(p.label, p.value)}
-              >
-                {p.label}
-              </button>
-            ))}
           </div>
-        )}
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ fontSize: '0.9rem', color: '#e5e7eb' }}>Start (1-based)</label>
-          <input
-            type="number"
-            style={{ ...inputStyle, width: 80, marginRight: '0.5rem' }}
-            min={1}
-            value={startK}
-            onChange={(e) => setStartK(Number(e.target.value) || 1)}
-          />
-          <label style={{ fontSize: '0.9rem', color: '#e5e7eb', marginRight: '0.5rem' }}>Count</label>
-          <input
-            type="number"
-            style={{ ...inputStyle, width: 80 }}
-            min={1}
-            value={countK}
-            onChange={(e) => setCountK(Number(e.target.value) || 1)}
-          />
-        </div>
-        {(selectedHostel || selectedPrivilege) && (
-          <>
-            {loading && <p style={{ color: '#9ca3af' }}>Loading users…</p>}
-            <ul style={{ listStyle: 'none', padding: 0 }}>
-              {users.map((u, i) => (
-                <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <span style={{ flex: 1 }}>
-                    {selectedHostel
-                      ? `${u[0] ?? ''} (${u[1] ?? ''}) — ${u[2] ?? ''}`
-                      : `${u[0] ?? ''} — ${u[1] ?? ''}`}
-                  </span>
-                  <Link to="/admin/manage/edit" style={{ ...secondaryButton, textDecoration: 'none' }}>Edit</Link>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        <div style={{ marginTop: '1.5rem' }}>
-          <Link to="/admin/manage/edit" style={{ ...primaryButton, textDecoration: 'none' }}>Add / Delete / Edit users →</Link>
+
+          {/* Right: logo */}
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+            <img src={collegeLogo} alt="College logo" style={logoCircle} />
+          </div>
         </div>
       </div>
     </div>
