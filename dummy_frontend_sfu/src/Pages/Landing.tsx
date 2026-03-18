@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { createRef, useEffect, useRef, useState } from "react"
 import * as mediasoupClient from "mediasoup-client"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import type { videoDetailsType } from "../../../shared/types/sfu";
@@ -8,12 +8,23 @@ export function Landing(){
     const [device,setDevice]=useState<mediasoupClient.types.Device|null>(null);
     const [consumerTransport,setConsumerTransport]=useState<mediasoupClient.types.Transport<mediasoupClient.types.AppData>|null>(null);
     const numCameras=10;
-    let videosRegistry:Map<number,CustomTypes.sfu.videoDetailsType>=new Map<number,CustomTypes.sfu.videoDetailsType>();
-
+    let mpp:Map<number,CustomTypes.sfu.videoDetailsType>=new Map<number,CustomTypes.sfu.videoDetailsType>();
+    let videosRegistry:React.RefObject<Map<number,CustomTypes.sfu.videoDetailsType>|null>=createRef<Map<number,CustomTypes.sfu.videoDetailsType>>();
+    let actualVideoRegistry:Map<number,CustomTypes.sfu.videoDetailsType>|null=videosRegistry.current;
+    actualVideoRegistry=new Map<number,CustomTypes.sfu.videoDetailsType>();
+    const [render,setRender]=useState<boolean>(false);
+    function forceRender(){
+        if(render) setRender(false);
+        else setRender(true);
+    }
     for(let i=0;i<numCameras;i++){
         let remoteVideoRef:React.RefObject<HTMLVideoElement|null>=useRef<HTMLVideoElement>(null);
         let cameraNumber:number=i+1;
-        videosRegistry.set(cameraNumber,{
+        if(!actualVideoRegistry){
+            console.log("actualVideoRegistry is null");
+            return;
+        }
+        actualVideoRegistry.set(cameraNumber,{
             videoRef:remoteVideoRef
         });
     }
@@ -111,17 +122,21 @@ export function Landing(){
                     const cameraName:string=params.cameraName;
                     const cameraNumber:number=Number(cameraName.slice(6));
                     const {track}=cons;
-                    const videoDetails:videoDetailsType|undefined=videosRegistry.get(cameraNumber);
+                    if(!actualVideoRegistry){
+                        console.log("actualVideoRegistry is null");
+                        return;
+                    }
+                    const videoDetails:videoDetailsType|undefined=actualVideoRegistry.get(cameraNumber);
                     if(!videoDetails){
                         console.log("videoDetails is undefined");
                         return;
                     }
                     videoDetails.consumer=cons;
                     videoDetails.video=track;
-                    videosRegistry.set(cameraNumber,videoDetails);
+                    actualVideoRegistry.set(cameraNumber,videoDetails);
                     const numCamerasAllowed:number=numCameras;
                     if(cameraNumber<=numCamerasAllowed){
-                        const actualVideoRefDetails:CustomTypes.sfu.videoDetailsType|undefined=videosRegistry.get(cameraNumber);
+                        const actualVideoRefDetails:CustomTypes.sfu.videoDetailsType|undefined=actualVideoRegistry.get(cameraNumber);
                         if(!actualVideoRefDetails){
                             console.log("actualVideoRefDetails is undefined")
                             return;
@@ -146,6 +161,7 @@ export function Landing(){
                             cameraName:cameraName
                         }
                         socket.send(JSON.stringify(send_message))
+                        forceRender();
                     }
                     else return;
                 }
@@ -154,10 +170,10 @@ export function Landing(){
     },[socket,device,consumerTransport])
     return(<>
         <button disabled={buttonPressed} onClick={pressButton}>recieve video</button>
-        {Array.from(videosRegistry.entries())
+        {actualVideoRegistry?Array.from(actualVideoRegistry.entries())
         .filter(([_, d]) => d.video)
         .map(([id, d]) => (
             <video key={id} ref={d.videoRef} autoPlay playsInline />
-        ))}
+        )):null}
     </>)
 }
