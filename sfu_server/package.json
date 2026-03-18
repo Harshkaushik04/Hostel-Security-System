@@ -16,6 +16,7 @@
     "@types/cors": "^2.8.19",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/ws": "^8.18.1",
+    "child_process": "^1.0.2",
     "cors": "^2.8.6",
     "jsonwebtoken": "^9.0.3",
     "mediasoup": "^3.19.18",
