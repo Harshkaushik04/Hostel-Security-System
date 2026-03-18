@@ -5,6 +5,7 @@ import { Device } from 'mediasoup-client'
 import type { Transport } from 'mediasoup-client/lib/Transport'
 import type { Consumer } from 'mediasoup-client/lib/Consumer'
 import { layout, card, secondaryButton, primaryButton } from '../styles/common'
+import { API_BASE } from '../api/client'
 
 const MEDIA_SERVER = 'http://127.0.0.1:4000'
 
@@ -15,6 +16,13 @@ type StreamItem = {
   producerId: string
   label: string
   stream: MediaStream
+}
+
+type FaceDetectionEvent = {
+  cameraId: string
+  ts: number
+  bboxes: Array<{ x: number; y: number; w: number; h: number }>
+  frameJpegBase64?: string
 }
 
 function createDummyCanvasStream(label: string, index: number): MediaStream {
@@ -48,6 +56,8 @@ export default function LiveFeed() {
   const [broadcasting, setBroadcasting] = useState(false)
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState('')
+  const [faceEvents, setFaceEvents] = useState<FaceDetectionEvent[]>([])
+  const [faceStreamStatus, setFaceStreamStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
   const socketRef = useRef<ReturnType<typeof io> | null>(null)
   const deviceRef = useRef<Device | null>(null)
   const sendTransportRef = useRef<Transport | null>(null)
@@ -179,6 +189,29 @@ export default function LiveFeed() {
     }
   }, [attachStream])
 
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+    if (!token) {
+      setFaceStreamStatus('error')
+      return
+    }
+    setFaceStreamStatus('connecting')
+
+    const url = `${API_BASE}/face-events/stream?token=${encodeURIComponent(token)}`
+    const es = new EventSource(url)
+    es.onopen = () => setFaceStreamStatus('connected')
+    es.onerror = () => setFaceStreamStatus('error')
+    es.onmessage = (msg) => {
+      try {
+        const ev = JSON.parse(msg.data) as FaceDetectionEvent
+        setFaceEvents((prev) => [ev, ...prev].slice(0, 100))
+      } catch {
+        // ignore
+      }
+    }
+    return () => es.close()
+  }, [])
+
   const startDummyStreams = async () => {
     if (!deviceRef.current || !socketRef.current || broadcasting) return
     setError('')
@@ -240,6 +273,7 @@ export default function LiveFeed() {
 
   const displayStreams = streams.length > 0 ? streams : []
   const placeholders = streams.length === 0 ? ['Camera 1', 'Camera 2', 'Camera 3', 'Camera 4'] : []
+  const latestFace = faceEvents[0]
 
   return (
     <div style={layout}>
@@ -284,87 +318,174 @@ export default function LiveFeed() {
           <Link to="/admin/past-recordings" style={{ ...secondaryButton, textDecoration: 'none' }}>View past recordings</Link>
         </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: fullscreenId ? '1fr' : 'repeat(2, 1fr)',
-            gap: '1rem',
-          }}
-        >
-          {displayStreams.map((item) => {
-            const isFull = fullscreenId === item.id
-            if (fullscreenId && !isFull) return null
-            return (
-              <div
-                key={item.id}
-                role="button"
-                tabIndex={0}
-                onDoubleClick={() => toggleFullscreen(item.id)}
-                style={{
-                  position: 'relative',
-                  aspectRatio: '16/9',
-                  background: '#000',
-                  borderRadius: 8,
-                  overflow: 'hidden',
-                  cursor: 'pointer',
-                  border: '1px solid rgba(148,163,184,0.3)',
-                }}
-              >
-                <video
-                  ref={(el) => {
-                    if (el) {
-                      videoRefsRef.current.set(item.id, el)
-                      el.srcObject = item.stream
-                      el.play().catch(() => {})
-                    }
-                  }}
-                  autoPlay
-                  playsInline
-                  muted
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
+        <div style={{ display: 'grid', gridTemplateColumns: fullscreenId ? '1fr' : '1fr 360px', gap: '1rem' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: fullscreenId ? '1fr' : 'repeat(2, 1fr)',
+              gap: '1rem',
+            }}
+          >
+            {displayStreams.map((item) => {
+              const isFull = fullscreenId === item.id
+              if (fullscreenId && !isFull) return null
+              return (
                 <div
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  onDoubleClick={() => toggleFullscreen(item.id)}
                   style={{
-                    position: 'absolute',
-                    bottom: 8,
-                    left: 8,
-                    background: 'rgba(0,0,0,0.6)',
-                    color: '#fff',
-                    padding: '4px 8px',
-                    borderRadius: 4,
-                    fontSize: '0.85rem',
+                    position: 'relative',
+                    aspectRatio: '16/9',
+                    background: '#000',
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    border: '1px solid rgba(148,163,184,0.3)',
                   }}
                 >
-                  {item.label} — double-click fullscreen
+                  <video
+                    ref={(el) => {
+                      if (el) {
+                        videoRefsRef.current.set(item.id, el)
+                        el.srcObject = item.stream
+                        el.play().catch(() => {})
+                      }
+                    }}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 8,
+                      left: 8,
+                      background: 'rgba(0,0,0,0.6)',
+                      color: '#fff',
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    {item.label} — double-click fullscreen
+                  </div>
                 </div>
+              )
+            })}
+            {placeholders.map((label, i) => {
+              const id = `placeholder-${i}`
+              const isFull = fullscreenId === id
+              if (fullscreenId && !isFull) return null
+              return (
+                <div
+                  key={id}
+                  role="button"
+                  tabIndex={0}
+                  onDoubleClick={() => toggleFullscreen(id)}
+                  style={{
+                    aspectRatio: '16/9',
+                    background: 'rgba(0,0,0,0.5)',
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    border: '1px solid rgba(148,163,184,0.3)',
+                  }}
+                >
+                  <span style={{ color: '#9ca3af' }}>{label} (start dummy streams to view)</span>
+                </div>
+              )
+            })}
+          </div>
+
+          {!fullscreenId && (
+            <div
+              style={{
+                border: '1px solid rgba(148,163,184,0.25)',
+                borderRadius: 10,
+                padding: '0.9rem',
+                background: 'rgba(15,23,42,0.35)',
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Detections</div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
+                    Stream:{' '}
+                    {faceStreamStatus === 'connected'
+                      ? 'Connected'
+                      : faceStreamStatus === 'connecting'
+                        ? 'Connecting…'
+                        : 'Error'}
+                  </div>
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>{faceEvents.length} events</div>
               </div>
-            )
-          })}
-          {placeholders.map((label, i) => {
-            const id = `placeholder-${i}`
-            const isFull = fullscreenId === id
-            if (fullscreenId && !isFull) return null
-            return (
-              <div
-                key={id}
-                role="button"
-                tabIndex={0}
-                onDoubleClick={() => toggleFullscreen(id)}
-                style={{
-                  aspectRatio: '16/9',
-                  background: 'rgba(0,0,0,0.5)',
-                  borderRadius: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  border: '1px solid rgba(148,163,184,0.3)',
-                }}
-              >
-                <span style={{ color: '#9ca3af' }}>{label} (start dummy streams to view)</span>
+
+              <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
+                {latestFace?.frameJpegBase64 ? (
+                  <img
+                    alt="Latest detection frame"
+                    src={`data:image/jpeg;base64,${latestFace.frameJpegBase64}`}
+                    style={{
+                      width: '100%',
+                      borderRadius: 8,
+                      border: '1px solid rgba(148,163,184,0.25)',
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '100%',
+                      borderRadius: 8,
+                      border: '1px dashed rgba(148,163,184,0.25)',
+                      padding: '1rem',
+                      color: '#9ca3af',
+                      fontSize: '0.9rem',
+                      textAlign: 'center',
+                    }}
+                  >
+                    No snapshot yet
+                  </div>
+                )}
               </div>
-            )
-          })}
+
+              <div style={{ maxHeight: '420px', overflow: 'auto', display: 'grid', gap: '0.5rem' }}>
+                {faceEvents.slice(0, 25).map((ev) => (
+                  <div
+                    key={`${ev.cameraId}-${ev.ts}`}
+                    style={{
+                      border: '1px solid rgba(148,163,184,0.2)',
+                      borderRadius: 8,
+                      padding: '0.6rem 0.65rem',
+                      background: 'rgba(2,6,23,0.35)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      <div style={{ fontWeight: 600 }}>{ev.cameraId}</div>
+                      <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
+                        {new Date(ev.ts).toLocaleTimeString()}
+                      </div>
+                    </div>
+                    <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+                      Faces: {ev.bboxes.length}
+                    </div>
+                  </div>
+                ))}
+                {faceEvents.length === 0 && (
+                  <div style={{ color: '#9ca3af', fontSize: '0.95rem', padding: '0.5rem 0' }}>
+                    Waiting for first detection…
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

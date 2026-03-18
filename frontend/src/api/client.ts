@@ -1,7 +1,7 @@
 /**
  * API client for Node backend (port 3000)
  */
-const API_BASE = 'http://127.0.0.1:3000'
+export const API_BASE = 'http://127.0.0.1:3000'
 
 export async function apiFetch<T>(
   path: string,
