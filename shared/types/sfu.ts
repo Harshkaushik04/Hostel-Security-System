@@ -61,3 +61,31 @@ export type videoDetailsType={
     videoRef:React.RefObject<HTMLVideoElement|null>,
     video?:MediaStreamTrack
 }
+
+export type mediaMTXResponseType={
+    itemCount:number,
+    pageCount:number,
+    items: [
+        {
+            name:string,
+            confName:string,
+            ready:boolean,
+            readyTime:string,
+            available:boolean,
+            availableTime:string,
+            online:boolean,
+            onlineTime:string,
+            source:{
+                type:string,
+                id:string
+            },
+            tracks:string[],
+            bytesReceived:number,
+            bytesSent:number,
+            readers:{
+                type:string,
+                id:string
+            }[]
+        }
+    ]
+}

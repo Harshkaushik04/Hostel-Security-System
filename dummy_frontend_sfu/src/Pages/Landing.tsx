@@ -12,10 +12,18 @@ export function Landing(){
     let videosRegistry:React.RefObject<Map<number,CustomTypes.sfu.videoDetailsType>|null>=useRef<Map<number,CustomTypes.sfu.videoDetailsType>>(mpp);
     let actualVideoRegistry=videosRegistry.current;
     const [render,setRender]=useState<boolean>(false);
+
     function forceRender(){
         if(render) setRender(false);
         else setRender(true);
     }
+
+    function wait(milsec:number) {
+    return new Promise(resolve => {
+        setTimeout(resolve, milsec);
+    });
+}
+
     if(actualVideoRegistry && actualVideoRegistry.size===0){
         for(let i=0;i<numCameras;i++){
             let remoteVideoRef:React.RefObject<HTMLVideoElement|null>=createRef<HTMLVideoElement>();
@@ -46,7 +54,10 @@ export function Landing(){
         setSocket(ws);
         return ()=> ws.close();
     },[])
-
+    useEffect(()=>{
+        const dev:mediasoupClient.types.Device=new mediasoupClient.Device();
+        setDevice(dev);
+    },[])
     useEffect(()=>{
         if(!socket) return;
         socket.onmessage=async (msg:MessageEvent<string>)=>{
@@ -66,9 +77,11 @@ export function Landing(){
                 const json_message:CustomTypes.sfu.wsMessageToFrontendType=whetherCorrect.data;
                 if(json_message.type=="get-rtp-capabilities"){
                     console.log("[get-rtp-capabilities]")
-                    const dev:mediasoupClient.types.Device=new mediasoupClient.Device();
-                    setDevice(dev);
-                    await dev.load({
+                    if(!device){
+                        console.log("device is null");
+                        return;
+                    }
+                    await device.load({
                         routerRtpCapabilities:json_message.rtpCapabilities
                     });
                     const send_message:CustomTypes.sfu.createWebrtcTransportToBackendType={
@@ -121,6 +134,7 @@ export function Landing(){
                     }
                     const cons:mediasoupClient.types.Consumer<mediasoupClient.types.AppData> = await consumerTransport.consume(params);
                     const cameraName:string=params.cameraName;
+                    console.log("consume for:",cameraName)
                     const cameraNumber:number=Number(cameraName.slice(6));
                     const {track}=cons;
                     if(!actualVideoRegistry){
@@ -147,22 +161,19 @@ export function Landing(){
                             console.log("remoteVideoRef is null");
                             return;
                         }
-                        if(!actualVideoRef){
-                            console.log("actualVideoRef is null");
-                            return;
-                        }
                         const actualVideoElement:HTMLVideoElement|null=actualVideoRef.current;
                         if(!actualVideoElement){
                             console.log("actualVideoElement is null");
                             return;
                         }
-                        actualVideoElement.srcObject = new MediaStream([track]);
+                        forceRender();
                         const send_message:CustomTypes.sfu.consumerResumeToBackendType={
                             type:"consumer-resume",
                             cameraName:cameraName
                         }
                         socket.send(JSON.stringify(send_message))
-                        forceRender();
+                        await wait(100);
+                        actualVideoElement.srcObject = new MediaStream([track]);
                     }
                     else return;
                 }
@@ -175,7 +186,8 @@ export function Landing(){
         // Removed the filter so refs are always mounted!
         .map(([id, d]) => (
             <video key={id} ref={d.videoRef} muted autoPlay playsInline 
-                   style={{ display: d.video ? "block" : "none" }} /> // Hide if empty
+                   style={{ display: d.video ? "block" : "none" ,width: "320px",  
+           height: "240px" }} /> // Hide if empty
         )) : null}
     </>)
 }
