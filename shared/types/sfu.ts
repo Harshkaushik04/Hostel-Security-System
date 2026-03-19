@@ -2,6 +2,7 @@ import {CustomSchemas} from "./../index.js"
 import {z} from "zod"
 import * as mediasoup from "mediasoup" 
 import * as mediasoupClient from "mediasoup-client"
+import type { ChildProcess } from "child_process"
 
 export type getRtpCapabilitiesToBackendType = z.infer<typeof CustomSchemas.sfu.getRtpCapabilitiesToBackendSchema>
 export type getRtpCapabilitiesToFrontendType = z.infer<typeof CustomSchemas.sfu.getRtpCapabilitiesToFrontendSchema>
@@ -42,5 +43,21 @@ export type afterCanConsumeParamsTypeActual={
     id:string,
     kind:mediasoup.types.MediaKind,
     producerId:string,
-    rtpParameters:mediasoup.types.RtpParameters
+    rtpParameters:mediasoup.types.RtpParameters,
+    cameraName:string
+}
+
+export type streamDetailsType={
+    ffmpeg:ChildProcess,
+    producer:mediasoup.types.Producer,
+    plainTransport:mediasoup.types.PlainTransport,
+    assignedRTpPort:number,
+    ssrc:number,
+    consumer?:mediasoup.types.Consumer
+}
+
+export type videoDetailsType={
+    consumer?:mediasoupClient.types.Consumer,
+    videoRef:React.RefObject<HTMLVideoElement|null>,
+    video?:MediaStreamTrack
 }

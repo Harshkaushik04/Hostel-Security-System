@@ -5,3 +5,5 @@ dist/
 node_backend/dist/
 test_generate_password.ts
 test_generate_password.js
+status
+status/
