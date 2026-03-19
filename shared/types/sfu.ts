@@ -52,8 +52,7 @@ export type streamDetailsType={
     producer:mediasoup.types.Producer,
     plainTransport:mediasoup.types.PlainTransport,
     assignedRTpPort:number,
-    ssrc:number,
-    consumer?:mediasoup.types.Consumer
+    ssrc:number
 }
 
 export type videoDetailsType={
@@ -64,7 +63,8 @@ export type videoDetailsType={
 
 export type clientDetailsType={
     areConsumersMade:boolean,
-    consumerTransport?:mediasoup.types.WebRtcTransport
+    consumerTransport?:mediasoup.types.WebRtcTransport,
+    consumers:Map<string,mediasoup.types.Consumer> //cameraName,consumer
 }
 
 export type mediaMTXResponseType={
