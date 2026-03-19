@@ -24,6 +24,19 @@ export function Landing(){
         setTimeout(resolve, milsec);
     });
 }
+/**
+  let clientDetails:CustomTypes.sfu.clientDetailsType|undefined=clients.get(ws);
+                    if(!clientDetails){
+                        console.log("clientDetails is undefined");
+                        return;
+                    }
+                    let mpp:Map<string,mediasoup.types.Consumer>=clientDetails.consumers;
+                    mpp.set(cameraName,consumer);
+                    clients.set(ws,{
+                        areConsumersMade:true,
+                        consumerTransport:consumerTransport
+                    });
+ */
 
     if(actualVideoRegistry && actualVideoRegistry.size===0){
         for(let i=0;i<numCameras;i++){

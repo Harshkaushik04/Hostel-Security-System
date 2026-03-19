@@ -197,8 +197,10 @@ async function run() {
     }
     wss.on("connection",async (ws:WebSocket)=>{
         console.log("connection");
+        let mpp:Map<string,mediasoup.types.Consumer>=new Map<string,mediasoup.types.Consumer>();
         clients.set(ws,{
-            areConsumersMade:false
+            areConsumersMade:false,
+            consumers:mpp
         }
         );
         let consumerTransport:mediasoup.types.WebRtcTransport<mediasoup.types.AppData>|null=null;
@@ -297,8 +299,8 @@ async function run() {
                             producer,
                             plainTransport,
                             assignedRTpPort,
-                            ssrc,
-                            consumer}=streamDetails;
+                            ssrc
+                        }=streamDetails;
                         if(!producer){
                             console.log("producer is null");
                             return;
@@ -324,8 +326,18 @@ async function run() {
                             consumer.on('producerclose', () => {
                                 console.log('producer of consumer closed')
                             })
-                            streamDetails.consumer=consumer;
-                            streamRegistry.set(cameraName,streamDetails);
+                            let clientDetails:CustomTypes.sfu.clientDetailsType|undefined=clients.get(ws);
+                            if(!clientDetails){
+                                console.log("clientDetails is undefined");
+                                return;
+                            }
+                            let mpp:Map<string,mediasoup.types.Consumer>=clientDetails.consumers;
+                            mpp.set(cameraName,consumer);
+                            clients.set(ws,{
+                                areConsumersMade:true,
+                                consumerTransport:consumerTransport,
+                                consumers:mpp
+                            });
                             const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                                 id:consumer.id,
                                 kind:consumer.kind,
@@ -351,9 +363,15 @@ async function run() {
                         console.log("streamDetails is undefined")
                         return;
                     }
-                    const consumer:mediasoup.types.Consumer|undefined=streamDetails.consumer;
+                    let clientDetails:CustomTypes.sfu.clientDetailsType|undefined=clients.get(ws);
+                    if(!clientDetails){
+                        console.log("clientDetails is undefined");
+                        return;
+                    }
+                    let mpp:Map<string,mediasoup.types.Consumer>=clientDetails.consumers;
+                    let consumer:mediasoup.types.Consumer|undefined=mpp.get(cameraName);
                     if(!consumer){
-                        console.log("consumer is undefined");
+                        console.log("consumer is undefined")
                         return;
                     }
                     consumer.resume();
@@ -361,10 +379,6 @@ async function run() {
                         console.log("consumerTransport is null");
                         return;
                     }
-                    clients.set(ws,{
-                        areConsumersMade:true,
-                        consumerTransport:consumerTransport
-                    });
                 }
             }
         })
@@ -510,8 +524,13 @@ async function run() {
                     consumer.on('producerclose', () => {
                         console.log('producer of consumer closed')
                     })
-                    streamDetails.consumer=consumer;
-                    streamRegistry.set(cameraName,streamDetails);
+                    let mpp:Map<string,mediasoup.types.Consumer>=clientDetails.consumers;
+                    mpp.set(cameraName,consumer);
+                    clients.set(ws,{
+                        areConsumersMade:true,
+                        consumerTransport:consumerTransport,
+                        consumers:mpp
+                    });
                     const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                         id:consumer.id,
                         kind:consumer.kind,
