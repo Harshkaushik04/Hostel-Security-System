@@ -2,8 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { Device } from 'mediasoup-client'
-import type { Transport } from 'mediasoup-client/lib/Transport'
-import type { Consumer } from 'mediasoup-client/lib/Consumer'
 import { layout, card, secondaryButton, primaryButton } from '../styles/common'
 import { API_BASE } from '../api/client'
 
@@ -24,6 +22,10 @@ type FaceDetectionEvent = {
   bboxes: Array<{ x: number; y: number; w: number; h: number }>
   frameJpegBase64?: string
 }
+
+type FaceWsMessage =
+  | { type: 'face_detected'; name: string; score?: number; ts: number; message?: string }
+  | { type: string; [k: string]: unknown }
 
 function createDummyCanvasStream(label: string, index: number): MediaStream {
   const canvas = document.createElement('canvas')
@@ -58,11 +60,13 @@ export default function LiveFeed() {
   const [error, setError] = useState('')
   const [faceEvents, setFaceEvents] = useState<FaceDetectionEvent[]>([])
   const [faceStreamStatus, setFaceStreamStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
+  const [faceWsStatus, setFaceWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
+  const [faceWsMessages, setFaceWsMessages] = useState<FaceWsMessage[]>([])
   const socketRef = useRef<ReturnType<typeof io> | null>(null)
   const deviceRef = useRef<Device | null>(null)
-  const sendTransportRef = useRef<Transport | null>(null)
-  const recvTransportRef = useRef<Transport | null>(null)
-  const consumersRef = useRef<Map<string, Consumer>>(new Map())
+  const sendTransportRef = useRef<any>(null)
+  const recvTransportRef = useRef<any>(null)
+  const consumersRef = useRef<Map<string, any>>(new Map())
   const videoRefsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
 
   const attachStream = useCallback((id: string, stream: MediaStream) => {
@@ -108,22 +112,24 @@ export default function LiveFeed() {
 
         const recvTransport = device.createRecvTransport({
           id,
-          iceParameters,
-          iceCandidates,
-          dtlsParameters,
-        })
+          iceParameters: iceParameters as any,
+          iceCandidates: iceCandidates as any,
+          dtlsParameters: dtlsParameters as any,
+        } as any)
         recvTransportRef.current = recvTransport
 
-        recvTransport.on('connect', async ({ dtlsParameters }, callback) => {
+        recvTransport.on('connect', async ({ dtlsParameters }: any, callback: () => void, errback: (e: Error) => void) => {
           socket.emit('connectRecvTransport', { transportId: recvTransport.id, dtlsParameters }, (r: unknown) => {
-            if (r && typeof r === 'object' && 'error' in r) callback(new Error((r as { error: string }).error))
+            if (r && typeof r === 'object' && 'error' in r) errback(new Error((r as { error: string }).error))
             else callback()
           })
         })
 
         const pollProducers = async () => {
           const { producerIds } = await new Promise<{ producerIds: string[] }>((res) => {
-            socket.emit('getProducers', null, (r: { producerIds?: string[] }) => res(r || { producerIds: [] }))
+            socket.emit('getProducers', null, (r: { producerIds?: string[] } | undefined) =>
+              res({ producerIds: r?.producerIds ?? [] })
+            )
           })
           const rtpCap = device.rtpCapabilities
           for (const producerId of producerIds) {
@@ -148,8 +154,8 @@ export default function LiveFeed() {
                 id: cons.id,
                 producerId: cons.producerId,
                 kind: cons.kind as 'video' | 'audio',
-                rtpParameters: cons.rtpParameters,
-              })
+                rtpParameters: cons.rtpParameters as any,
+              } as any)
               consumersRef.current.set(producerId, consumer)
               const stream = new MediaStream([consumer.track])
               setStreams((prev) => {
@@ -170,7 +176,7 @@ export default function LiveFeed() {
 
         await pollProducers()
         const interval = setInterval(pollProducers, 2000)
-        socket.on('newProducer', ({ producerId }: { producerId: string }) => {
+        socket.on('newProducer', (_: { producerId: string }) => {
           pollProducers()
         })
         return () => clearInterval(interval)
@@ -212,6 +218,40 @@ export default function LiveFeed() {
     return () => es.close()
   }, [])
 
+  useEffect(() => {
+    // FastAPI face detection websocket (default port 8001)
+    const host = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
+    const wsUrl = `ws://${host}:8001/ws`
+    setFaceWsStatus('connecting')
+
+    const ws = new WebSocket(wsUrl)
+    ws.onopen = () => setFaceWsStatus('connected')
+    ws.onerror = () => setFaceWsStatus('error')
+    ws.onclose = () => setFaceWsStatus('error')
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(String(evt.data)) as FaceWsMessage
+        setFaceWsMessages((prev) => [msg, ...prev].slice(0, 50))
+      } catch {
+        // ignore
+      }
+    }
+
+    // keepalive ping every 15s
+    const t = window.setInterval(() => {
+      try {
+        if (ws.readyState === WebSocket.OPEN) ws.send('ping')
+      } catch {
+        // ignore
+      }
+    }, 15000)
+
+    return () => {
+      window.clearInterval(t)
+      ws.close()
+    }
+  }, [])
+
   const startDummyStreams = async () => {
     if (!deviceRef.current || !socketRef.current || broadcasting) return
     setError('')
@@ -234,25 +274,28 @@ export default function LiveFeed() {
 
       const sendTransport = device.createSendTransport({
         id,
-        iceParameters,
-        iceCandidates,
-        dtlsParameters,
-      })
+        iceParameters: iceParameters as any,
+        iceCandidates: iceCandidates as any,
+        dtlsParameters: dtlsParameters as any,
+      } as any)
       sendTransportRef.current = sendTransport
 
-      sendTransport.on('connect', async ({ dtlsParameters }, callback) => {
+      sendTransport.on('connect', async ({ dtlsParameters }: any, callback: () => void, errback: (e: Error) => void) => {
         socket.emit('connectSendTransport', { transportId: sendTransport.id, dtlsParameters }, (r: unknown) => {
-          if (r && typeof r === 'object' && 'error' in r) callback(new Error((r as { error: string }).error))
+          if (r && typeof r === 'object' && 'error' in r) errback(new Error((r as { error: string }).error))
           else callback()
         })
       })
 
-      sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback) => {
-        socket.emit('produce', { transportId: sendTransport.id, kind, rtpParameters, appData }, (r: unknown) => {
-          if (r && typeof r === 'object' && 'error' in r) callback(new Error((r as { error: string }).error))
-          else callback({ id: (r as { id: string }).id })
-        })
-      })
+      sendTransport.on(
+        'produce',
+        async ({ kind, rtpParameters, appData }: any, callback: ({ id }: { id: string }) => void, errback: (e: Error) => void) => {
+          socket.emit('produce', { transportId: sendTransport.id, kind, rtpParameters, appData }, (r: unknown) => {
+            if (r && typeof r === 'object' && 'error' in r) errback(new Error((r as { error: string }).error))
+            else callback({ id: (r as { id: string }).id })
+          })
+        }
+      )
 
       const labels = ['Hostel A - Cam 1', 'Hostel A - Cam 2', 'Hostel B - Cam 1', 'Hostel B - Cam 2']
       for (let i = 0; i < 4; i++) {
@@ -274,6 +317,7 @@ export default function LiveFeed() {
   const displayStreams = streams.length > 0 ? streams : []
   const placeholders = streams.length === 0 ? ['Camera 1', 'Camera 2', 'Camera 3', 'Camera 4'] : []
   const latestFace = faceEvents[0]
+  const latestWs = faceWsMessages[0]
 
   return (
     <div style={layout}>
@@ -416,16 +460,48 @@ export default function LiveFeed() {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Detections</div>
                   <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                    Stream:{' '}
+                    SSE:{' '}
                     {faceStreamStatus === 'connected'
                       ? 'Connected'
                       : faceStreamStatus === 'connecting'
                         ? 'Connecting…'
                         : 'Error'}
                   </div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
+                    WS:{' '}
+                    {faceWsStatus === 'connected'
+                      ? 'Connected'
+                      : faceWsStatus === 'connecting'
+                        ? 'Connecting…'
+                        : 'Error'}
+                  </div>
                 </div>
                 <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>{faceEvents.length} events</div>
               </div>
+
+              {latestWs?.type === 'face_detected' && (
+                <div
+                  style={{
+                    marginTop: '0.75rem',
+                    padding: '0.75rem',
+                    borderRadius: 10,
+                    border: '1px solid rgba(74, 222, 128, 0.25)',
+                    background: 'rgba(22, 163, 74, 0.08)',
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    {(latestWs as { message?: unknown }).message
+                      ? String((latestWs as { message: unknown }).message)
+                      : `${String((latestWs as { name?: unknown }).name ?? 'Unknown')}'s face has been detected`}
+                  </div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+                    {new Date(Number(latestWs.ts)).toLocaleTimeString()}
+                    {typeof (latestWs as { score?: number }).score === 'number'
+                      ? ` • score ${(latestWs as { score: number }).score.toFixed(3)}`
+                      : null}
+                  </div>
+                </div>
+              )}
 
               <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
                 {latestFace?.frameJpegBase64 ? (
