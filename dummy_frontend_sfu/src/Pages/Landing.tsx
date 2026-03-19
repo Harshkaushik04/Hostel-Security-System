@@ -1,13 +1,34 @@
-import { useEffect, useRef, useState } from "react"
+import { createRef, useEffect, useRef, useState } from "react"
 import * as mediasoupClient from "mediasoup-client"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
+import type { videoDetailsType } from "../../../shared/types/sfu";
 export function Landing(){
     const [buttonPressed,setButtonPressed]=useState<boolean>(false);
     const [socket,setSocket]=useState<WebSocket|null>(null);
     const [device,setDevice]=useState<mediasoupClient.types.Device|null>(null);
     const [consumerTransport,setConsumerTransport]=useState<mediasoupClient.types.Transport<mediasoupClient.types.AppData>|null>(null);
-    const [consumer,setConsumer]=useState<mediasoupClient.types.Consumer<mediasoupClient.types.AppData>|null>(null);
-    const remoteVideoRef=useRef<HTMLVideoElement|null>(null);
+    const numCameras=10;
+    const mpp:Map<number,CustomTypes.sfu.videoDetailsType>=new Map<number,CustomTypes.sfu.videoDetailsType>();
+    let videosRegistry:React.RefObject<Map<number,CustomTypes.sfu.videoDetailsType>|null>=useRef<Map<number,CustomTypes.sfu.videoDetailsType>>(mpp);
+    let actualVideoRegistry=videosRegistry.current;
+    const [render,setRender]=useState<boolean>(false);
+    function forceRender(){
+        if(render) setRender(false);
+        else setRender(true);
+    }
+    if(actualVideoRegistry && actualVideoRegistry.size===0){
+        for(let i=0;i<numCameras;i++){
+            let remoteVideoRef:React.RefObject<HTMLVideoElement|null>=createRef<HTMLVideoElement>();
+            let cameraNumber:number=i+1;
+            if(!actualVideoRegistry){
+                console.log("actualVideoRegistry is null");
+                return <></>
+            }
+            actualVideoRegistry.set(cameraNumber,{
+                videoRef:remoteVideoRef
+            });
+        }
+    }
     function pressButton(){
         setButtonPressed(true);
         if(!socket){
@@ -99,24 +120,62 @@ export function Landing(){
                         return;
                     }
                     const cons:mediasoupClient.types.Consumer<mediasoupClient.types.AppData> = await consumerTransport.consume(params);
-                    setConsumer(cons);
+                    const cameraName:string=params.cameraName;
+                    const cameraNumber:number=Number(cameraName.slice(6));
                     const {track}=cons;
-                    const actualVideoRef=remoteVideoRef.current;
-                    if(!actualVideoRef){
-                        console.log("remoteVideoRef is null");
+                    if(!actualVideoRegistry){
+                        console.log("actualVideoRegistry is null");
                         return;
                     }
-                    actualVideoRef.srcObject = new MediaStream([track]);
-                    const send_message:CustomTypes.sfu.consumerResumeToBackendType={
-                        type:"consumer-resume"
+                    const videoDetails:videoDetailsType|undefined=actualVideoRegistry.get(cameraNumber);
+                    if(!videoDetails){
+                        console.log("videoDetails is undefined");
+                        return;
                     }
-                    socket.send(JSON.stringify(send_message))
+                    videoDetails.consumer=cons;
+                    videoDetails.video=track;
+                    actualVideoRegistry.set(cameraNumber,videoDetails);
+                    const numCamerasAllowed:number=numCameras;
+                    if(cameraNumber<=numCamerasAllowed){
+                        const actualVideoRefDetails:CustomTypes.sfu.videoDetailsType|undefined=actualVideoRegistry.get(cameraNumber);
+                        if(!actualVideoRefDetails){
+                            console.log("actualVideoRefDetails is undefined")
+                            return;
+                        }
+                        const actualVideoRef:React.RefObject<HTMLVideoElement|null>|undefined=actualVideoRefDetails.videoRef;
+                        if(!actualVideoRef){
+                            console.log("remoteVideoRef is null");
+                            return;
+                        }
+                        if(!actualVideoRef){
+                            console.log("actualVideoRef is null");
+                            return;
+                        }
+                        const actualVideoElement:HTMLVideoElement|null=actualVideoRef.current;
+                        if(!actualVideoElement){
+                            console.log("actualVideoElement is null");
+                            return;
+                        }
+                        actualVideoElement.srcObject = new MediaStream([track]);
+                        const send_message:CustomTypes.sfu.consumerResumeToBackendType={
+                            type:"consumer-resume",
+                            cameraName:cameraName
+                        }
+                        socket.send(JSON.stringify(send_message))
+                        forceRender();
+                    }
+                    else return;
                 }
             }
         }
     },[socket,device,consumerTransport])
     return(<>
         <button disabled={buttonPressed} onClick={pressButton}>recieve video</button>
-        <video ref={remoteVideoRef} autoPlay muted playsInline/>
+        {actualVideoRegistry ? Array.from(actualVideoRegistry.entries())
+        // Removed the filter so refs are always mounted!
+        .map(([id, d]) => (
+            <video key={id} ref={d.videoRef} muted autoPlay playsInline 
+                   style={{ display: d.video ? "block" : "none" }} /> // Hide if empty
+        )) : null}
     </>)
 }

@@ -117,5 +117,8 @@
     "dist",
     "src/schemas.ts", // Explicitly ignore the old file location
     "src/types.ts"   // Explicitly ignore the old file location
+  ],
+  "references": [
+    { "path": "../shared" }
   ]
 }
