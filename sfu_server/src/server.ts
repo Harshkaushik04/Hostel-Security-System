@@ -9,6 +9,7 @@ import cors from "cors"
 import console from 'console';
 import type { streamDetailsType } from '../../shared/types/sfu.js';
 import axios from 'axios';
+import type { CursorPos } from 'readline';
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -35,7 +36,7 @@ const initialSsrc=2000;
 const initialRtpPort=30000;
 
 let streamRegistry:Map<string,CustomTypes.sfu.streamDetailsType>=new Map<string,CustomTypes.sfu.streamDetailsType>();
-let clients:Set<WebSocket>=new Set<WebSocket>();
+let clients:Map<WebSocket,CustomTypes.sfu.clientDetailsType>=new Map<WebSocket,CustomTypes.sfu.clientDetailsType>();
 
 function wait(milsec:number) {
     return new Promise(resolve => {
@@ -123,9 +124,83 @@ async function run() {
         });
         return ffmpegProcess
     }
+    const res = await axios.get("http://localhost:9997/v3/paths/list");
+    const responseData:CustomTypes.sfu.mediaMTXResponseType = res.data;
+    for(const stream of responseData.items){
+        let cameraName=stream.name;
+        console.log("[stream-started]:",cameraName)
+        if(!router){
+            console.log("router is null");
+            return;
+        }
+        let plainTransport = await router.createPlainTransport({
+            // Listen on localhost since MediaMTX is on the same machine
+            listenIp: { ip: '127.0.0.1'}, 
+            rtcpMux: false, // Tell it RTP and RTCP will come on separate ports
+            comedia: true  // We know the exact IP sending the data, no need to auto-detect
+        });
+
+        console.log(`=== INGESTION PORT OPEN ===`);
+        console.log(`Send RTP Video to IP: ${plainTransport.tuple.localIp}`);
+        console.log(`Send RTP Video to Port: ${plainTransport.tuple.localPort}`);
+        console.log(`Send RTCP Telemetry to Port: ${plainTransport.rtcpTuple?.localPort}`);
+        console.log(`===========================\n`);
+        let ffmpegProcess: ChildProcess | null = null;
+        let ssrc=initialSsrc+counter;
+        let assignedRtpPort=initialRtpPort+counter;
+        ffmpegProcess=startFFmpegBridgeWithArgs(cameraName,ssrc,plainTransport);
+        let producer = await plainTransport.produce({
+            kind: 'video',
+            rtpParameters: {
+                codecs: [
+                    {
+                        mimeType: 'video/H264',
+                        clockRate: 90000,
+                        payloadType: 112,
+                        parameters: { 
+                            'packetization-mode': 1,
+                            'profile-level-id': '42e028',
+                            'level-asymmetry-allowed': 1
+                        }
+                    }
+                ],
+                encodings: [
+                    { ssrc: ssrc } 
+                ]
+            }
+        });
+        console.log(`\nProducer created! ID: ${producer.id}`);
+        const statsInterval=setInterval(async () => {
+            if(!producer || producer.closed){
+                clearInterval(statsInterval); // Kill this zombie loop permanently
+                return;
+            }
+            try {
+                const stats = await producer.getStats();
+                const byteCount = stats[0]?.byteCount || 0;
+                console.log(`[${cameraName}] Bytes received: ${byteCount}`);
+            } catch (error: any) {
+                // 3. Catch race-condition errors so they don't crash the server
+                console.log(`[${cameraName}] Dropping stats request: ${error.message}`);
+                clearInterval(statsInterval);
+            }
+        }, 3000);
+        let streamDetails:CustomTypes.sfu.streamDetailsType={
+            ffmpeg:ffmpegProcess,
+            producer:producer,
+            plainTransport:plainTransport,
+            assignedRTpPort:assignedRtpPort,
+            ssrc:ssrc
+        }
+        streamRegistry.set(cameraName,streamDetails);
+        counter++;
+    }
     wss.on("connection",async (ws:WebSocket)=>{
         console.log("connection");
-        clients.add(ws);
+        clients.set(ws,{
+            areConsumersMade:false
+        }
+        );
         let consumerTransport:mediasoup.types.WebRtcTransport<mediasoup.types.AppData>|null=null;
         ws.on("message",async (msg:WebSocket.RawData)=>{
             const recv_message=JSON.parse(msg.toString());
@@ -146,83 +221,6 @@ async function run() {
                     return;
                 }
                 if(json_message.type=="get-rtp-capabilities"){
-                    const res = await axios.get("http://localhost:9997/v3/paths/list");
-                    const responseData:CustomTypes.sfu.mediaMTXResponseType = res.data;
-                    for(const stream of responseData.items){
-                        let cameraName=stream.name;
-                        console.log("[stream-started]:",cameraName)
-                        if(!router){
-                            console.log("router is null");
-                            return;
-                        }
-                        let plainTransport = await router.createPlainTransport({
-                            // Listen on localhost since MediaMTX is on the same machine
-                            listenIp: { ip: '127.0.0.1'}, 
-                            rtcpMux: false, // Tell it RTP and RTCP will come on separate ports
-                            comedia: true  // We know the exact IP sending the data, no need to auto-detect
-                        });
-
-                        console.log(`=== INGESTION PORT OPEN ===`);
-                        console.log(`Send RTP Video to IP: ${plainTransport.tuple.localIp}`);
-                        console.log(`Send RTP Video to Port: ${plainTransport.tuple.localPort}`);
-                        console.log(`Send RTCP Telemetry to Port: ${plainTransport.rtcpTuple?.localPort}`);
-                        console.log(`===========================\n`);
-                        let ffmpegProcess: ChildProcess | null = null;
-                        let ssrc=initialSsrc+counter;
-                        let assignedRtpPort=initialRtpPort+counter;
-                        ffmpegProcess=startFFmpegBridgeWithArgs(cameraName,ssrc,plainTransport);
-                        let producer = await plainTransport.produce({
-                            kind: 'video',
-                            rtpParameters: {
-                                codecs: [
-                                    {
-                                        mimeType: 'video/H264',
-                                        clockRate: 90000,
-                                        payloadType: 112,
-                                        parameters: { 
-                                            'packetization-mode': 1,
-                                            'profile-level-id': '42e028',
-                                            'level-asymmetry-allowed': 1
-                                        }
-                                    }
-                                ],
-                                encodings: [
-                                    { ssrc: ssrc } 
-                                ]
-                            }
-                        });
-
-                        console.log(`\nProducer created! ID: ${producer.id}`);
-
-                        const statsInterval=setInterval(async () => {
-                            if(!producer || producer.closed){
-                                clearInterval(statsInterval); // Kill this zombie loop permanently
-                                return;
-                            }
-                            try {
-                                const stats = await producer.getStats();
-                                const byteCount = stats[0]?.byteCount || 0;
-                                console.log(`[${cameraName}] Bytes received: ${byteCount}`);
-                            } catch (error: any) {
-                                // 3. Catch race-condition errors so they don't crash the server
-                                console.log(`[${cameraName}] Dropping stats request: ${error.message}`);
-                                clearInterval(statsInterval);
-                            }
-                        }, 3000);
-                        let streamDetails:CustomTypes.sfu.streamDetailsType={
-                            ffmpeg:ffmpegProcess,
-                            producer:producer,
-                            plainTransport:plainTransport,
-                            assignedRTpPort:assignedRtpPort,
-                            ssrc:ssrc
-                        }
-                        streamRegistry.set(cameraName,streamDetails);
-                        counter++;
-                        if(!router){
-                            console.log("router is null");
-                            return;
-                        }
-                    }
                     console.log("[get-rtp-capabilities]")
                     const send_message:CustomTypes.sfu.getRtpCapabilitiesToFrontendTypeActual={
                         type:"get-rtp-capabilities",
@@ -279,7 +277,7 @@ async function run() {
                     ws.send(JSON.stringify(send_message));
                 }
                 else if(json_message.type=="transport-recv-connect"){
-                    console.log("[transport-recv-connect")
+                    console.log("[transport-recv-connect]")
                     if(!consumerTransport){
                         console.log("consumerTransport is null");
                         return;
@@ -301,6 +299,10 @@ async function run() {
                             assignedRTpPort,
                             ssrc,
                             consumer}=streamDetails;
+                        if(!producer){
+                            console.log("producer is null");
+                            return;
+                        }
                         if(router.canConsume({
                             producerId:producer.id,
                             rtpCapabilities:rtpCapabilities
@@ -331,6 +333,7 @@ async function run() {
                                 rtpParameters:consumer.rtpParameters,
                                 cameraName:cameraName
                             }
+                            console.log("ws: send invitation-to-come: for ",cameraName)
                             const send_message:CustomTypes.sfu.invitationToConsumeToFrontendType={
                                 type:"invitation-to-consume",
                                 params:sendParams
@@ -354,6 +357,14 @@ async function run() {
                         return;
                     }
                     consumer.resume();
+                    if(!consumerTransport){
+                        console.log("consumerTransport is null");
+                        return;
+                    }
+                    clients.set(ws,{
+                        areConsumersMade:true,
+                        consumerTransport:consumerTransport
+                    });
                 }
             }
         })
@@ -463,13 +474,60 @@ async function run() {
         }
         streamRegistry.set(cameraName,streamDetails);
         counter++;
-        for(const ws of clients){
+        for(const [ws,clientDetails] of clients){
             console.log("[get-rtp-capabilities]")
-            const send_message:CustomTypes.sfu.getRtpCapabilitiesToFrontendTypeActual={
-                type:"get-rtp-capabilities",
-                rtpCapabilities:router.rtpCapabilities
+            if(!clientDetails.areConsumersMade){
+                const send_message:CustomTypes.sfu.getRtpCapabilitiesToFrontendTypeActual={
+                    type:"get-rtp-capabilities",
+                    rtpCapabilities:router.rtpCapabilities
+                }
+                ws.send(JSON.stringify(send_message));
             }
-            ws.send(JSON.stringify(send_message));
+            else{
+                if(router.canConsume({
+                    producerId:producer.id,
+                    rtpCapabilities:router.rtpCapabilities
+                })){
+                    let clientDetails:CustomTypes.sfu.clientDetailsType|undefined=clients.get(ws);
+                    if(!clientDetails){
+                        console.log("clientDetails is null");
+                        return;
+                    }
+                    let consumerTransport:mediasoup.types.WebRtcTransport|undefined=clientDetails.consumerTransport;
+                    if(!consumerTransport){
+                        console.log("consumerTransport is undefined");
+                        return;
+                    }
+                    let consumer = await consumerTransport.consume({
+                        producerId:producer.id,
+                        rtpCapabilities:router.rtpCapabilities,
+                        paused:true
+                    })
+                    consumer.on('transportclose', () => {
+                        console.log('transport close from consumer')
+                    })
+
+                    consumer.on('producerclose', () => {
+                        console.log('producer of consumer closed')
+                    })
+                    streamDetails.consumer=consumer;
+                    streamRegistry.set(cameraName,streamDetails);
+                    const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
+                        id:consumer.id,
+                        kind:consumer.kind,
+                        producerId:producer.id,
+                        rtpParameters:consumer.rtpParameters,
+                        cameraName:cameraName
+                    }
+                    console.log("/stream-started: send invitation-to-consume for ",cameraName)
+                    const send_message:CustomTypes.sfu.invitationToConsumeToFrontendType={
+                        type:"invitation-to-consume",
+                        params:sendParams
+                    }
+                    ws.send(JSON.stringify(send_message));
+                }
+                else console.log("cant consume stream with ssrc",ssrc)
+            }
         }
         res.sendStatus(200);
     })

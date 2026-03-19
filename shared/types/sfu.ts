@@ -62,6 +62,11 @@ export type videoDetailsType={
     video?:MediaStreamTrack
 }
 
+export type clientDetailsType={
+    areConsumersMade:boolean,
+    consumerTransport?:mediasoup.types.WebRtcTransport
+}
+
 export type mediaMTXResponseType={
     itemCount:number,
     pageCount:number,
