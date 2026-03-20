@@ -7,15 +7,37 @@ export function Landing(){
     const [socket,setSocket]=useState<WebSocket|null>(null);
     const [device,setDevice]=useState<mediasoupClient.types.Device|null>(null);
     const [consumerTransport,setConsumerTransport]=useState<mediasoupClient.types.Transport<mediasoupClient.types.AppData>|null>(null);
+    const [connectedToSfu,setConnectedToSfu]=useState<boolean>(false);
     const numCameras=10;
     const mpp:Map<number,CustomTypes.sfu.videoDetailsType>=new Map<number,CustomTypes.sfu.videoDetailsType>();
     let videosRegistry:React.RefObject<Map<number,CustomTypes.sfu.videoDetailsType>|null>=useRef<Map<number,CustomTypes.sfu.videoDetailsType>>(mpp);
     let actualVideoRegistry=videosRegistry.current;
     const [render,setRender]=useState<boolean>(false);
+
     function forceRender(){
         if(render) setRender(false);
         else setRender(true);
     }
+
+    function wait(milsec:number) {
+    return new Promise(resolve => {
+        setTimeout(resolve, milsec);
+    });
+}
+/**
+  let clientDetails:CustomTypes.sfu.clientDetailsType|undefined=clients.get(ws);
+                    if(!clientDetails){
+                        console.log("clientDetails is undefined");
+                        return;
+                    }
+                    let mpp:Map<string,mediasoup.types.Consumer>=clientDetails.consumers;
+                    mpp.set(cameraName,consumer);
+                    clients.set(ws,{
+                        areConsumersMade:true,
+                        consumerTransport:consumerTransport
+                    });
+ */
+
     if(actualVideoRegistry && actualVideoRegistry.size===0){
         for(let i=0;i<numCameras;i++){
             let remoteVideoRef:React.RefObject<HTMLVideoElement|null>=createRef<HTMLVideoElement>();
@@ -46,7 +68,10 @@ export function Landing(){
         setSocket(ws);
         return ()=> ws.close();
     },[])
-
+    useEffect(()=>{
+        const dev:mediasoupClient.types.Device=new mediasoupClient.Device();
+        setDevice(dev);
+    },[])
     useEffect(()=>{
         if(!socket) return;
         socket.onmessage=async (msg:MessageEvent<string>)=>{
@@ -66,15 +91,20 @@ export function Landing(){
                 const json_message:CustomTypes.sfu.wsMessageToFrontendType=whetherCorrect.data;
                 if(json_message.type=="get-rtp-capabilities"){
                     console.log("[get-rtp-capabilities]")
-                    const dev:mediasoupClient.types.Device=new mediasoupClient.Device();
-                    setDevice(dev);
-                    await dev.load({
-                        routerRtpCapabilities:json_message.rtpCapabilities
-                    });
+                    if(!device){
+                        console.log("device is null");
+                        return;
+                    }
+                    if(!connectedToSfu){
+                        await device.load({
+                            routerRtpCapabilities:json_message.rtpCapabilities
+                        })
+                    }
                     const send_message:CustomTypes.sfu.createWebrtcTransportToBackendType={
                         type:"create-webrtc-transport"
                     }
                     socket.send(JSON.stringify(send_message))
+                    setConnectedToSfu(true);
                 }
                 else if(json_message.type=="send-consumer-transport-params"){
                     console.log("[send-consumer-transport-params]")
@@ -121,6 +151,7 @@ export function Landing(){
                     }
                     const cons:mediasoupClient.types.Consumer<mediasoupClient.types.AppData> = await consumerTransport.consume(params);
                     const cameraName:string=params.cameraName;
+                    console.log("consume for:",cameraName)
                     const cameraNumber:number=Number(cameraName.slice(6));
                     const {track}=cons;
                     if(!actualVideoRegistry){
@@ -137,32 +168,35 @@ export function Landing(){
                     actualVideoRegistry.set(cameraNumber,videoDetails);
                     const numCamerasAllowed:number=numCameras;
                     if(cameraNumber<=numCamerasAllowed){
-                        const actualVideoRefDetails:CustomTypes.sfu.videoDetailsType|undefined=actualVideoRegistry.get(cameraNumber);
-                        if(!actualVideoRefDetails){
-                            console.log("actualVideoRefDetails is undefined")
-                            return;
-                        }
-                        const actualVideoRef:React.RefObject<HTMLVideoElement|null>|undefined=actualVideoRefDetails.videoRef;
-                        if(!actualVideoRef){
-                            console.log("remoteVideoRef is null");
-                            return;
-                        }
-                        if(!actualVideoRef){
-                            console.log("actualVideoRef is null");
-                            return;
-                        }
-                        const actualVideoElement:HTMLVideoElement|null=actualVideoRef.current;
+                        const actualVideoRefDetails = actualVideoRegistry.get(cameraNumber);
+                        const actualVideoRef = actualVideoRefDetails?.videoRef;
+                        const actualVideoElement = actualVideoRef?.current;
+                        
                         if(!actualVideoElement){
                             console.log("actualVideoElement is null");
                             return;
                         }
+
+                        // 1. Assign the stream directly. 
                         actualVideoElement.srcObject = new MediaStream([track]);
-                        const send_message:CustomTypes.sfu.consumerResumeToBackendType={
-                            type:"consumer-resume",
-                            cameraName:cameraName
-                        }
-                        socket.send(JSON.stringify(send_message))
-                        forceRender();
+
+                        // 2. Wrap the manual play in a tiny timeout so the MediaStream has time to attach,
+                        // though autoPlay will likely handle it automatically now.
+                        setTimeout(() => {
+                            actualVideoElement.play().catch(e => {
+                                console.log("Play warning (safe to ignore if video is rendering):", e.message);
+                            });
+                        }, 50);
+
+                        // 3. Keep React state in sync (React will now safely ignore the video DOM nodes)
+                        forceRender(); 
+                        
+                        // 4. Tell the backend to resume sending packets
+                        const send_message = {
+                            type: "consumer-resume",
+                            cameraName: cameraName
+                        };
+                        socket.send(JSON.stringify(send_message));
                     }
                     else return;
                 }
@@ -171,11 +205,23 @@ export function Landing(){
     },[socket,device,consumerTransport])
     return(<>
         <button disabled={buttonPressed} onClick={pressButton}>recieve video</button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
         {actualVideoRegistry ? Array.from(actualVideoRegistry.entries())
-        // Removed the filter so refs are always mounted!
         .map(([id, d]) => (
-            <video key={id} ref={d.videoRef} muted autoPlay playsInline 
-                   style={{ display: d.video ? "block" : "none" }} /> // Hide if empty
+            <video 
+                key={id} 
+                ref={d.videoRef} 
+                muted 
+                autoPlay 
+                playsInline 
+                style={{ 
+                    display: "block",
+                    width: "320px",  
+                    height: "240px",
+                    backgroundColor: "#111" 
+                }} 
+            />
         )) : null}
+    </div>
     </>)
 }
