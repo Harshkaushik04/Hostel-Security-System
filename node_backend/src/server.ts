@@ -477,7 +477,7 @@ app.post("/get-admin-users-list",async (req:Request,res:Response)=>{
 })
 
 app.post("/upload-manually",async(req:Request,res:Response)=>{
-    const reqCheck = CustomSchemas.manageUsers.UploadManuallyAdminRequestSchema.safeParse(req.body)
+    const reqCheck = CustomSchemas.manageUsers.UploadManuallyRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
         return res.send({
             approved:false,

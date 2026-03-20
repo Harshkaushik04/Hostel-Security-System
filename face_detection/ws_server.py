@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Set
 
 import cv2
+import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,7 +19,12 @@ from face_id.core import FaceEngine, load_known_db
 class Settings:
     # default: webcam. You can set FACE_SOURCE to RTSP path if desired.
     source: str = os.environ.get("FACE_SOURCE", "0")
-    threshold: float = float(os.environ.get("FACE_THRESHOLD", "0.45"))
+    # Higher threshold reduces false positives.
+    threshold: float = float(os.environ.get("FACE_THRESHOLD", "0.65"))
+    # Require the best match to beat the 2nd best by this margin.
+    margin: float = float(os.environ.get("FACE_MARGIN", "0.06"))
+    # Require the same identity for N consecutive frames before emitting.
+    min_consecutive: int = int(os.environ.get("FACE_MIN_CONSECUTIVE", "3"))
     # Only emit message for this label (set empty to emit all recognized)
     target_label: str = os.environ.get("FACE_TARGET_LABEL", "YASH")
     # cooldown per label (seconds) to avoid spamming UI
@@ -71,6 +77,35 @@ def _open_capture(source: str) -> cv2.VideoCapture:
         return cv2.VideoCapture(int(source))
     return cv2.VideoCapture(source)
 
+def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
+    a = a.astype(np.float32).reshape(-1)
+    b = b.astype(np.float32).reshape(-1)
+    denom = (np.linalg.norm(a) * np.linalg.norm(b)) + 1e-8
+    return float(np.dot(a, b) / denom)
+
+def _best_two_scores(emb: np.ndarray, known_embs: np.ndarray, known_labels: list[str]) -> tuple[str, float, float]:
+    """
+    Returns (best_label, best_score, second_best_score)
+    """
+    if known_embs.size == 0:
+        return ("Unknown", 0.0, 0.0)
+
+    best_i = -1
+    best = -1.0
+    second = -1.0
+
+    for i in range(known_embs.shape[0]):
+        s = _cosine_sim(emb, known_embs[i])
+        if s > best:
+            second = best
+            best = s
+            best_i = i
+        elif s > second:
+            second = s
+
+    label = known_labels[best_i] if best_i >= 0 else "Unknown"
+    return (label, float(best), float(max(second, 0.0)))
+
 
 async def recognition_loop() -> None:
     engine = FaceEngine()
@@ -84,7 +119,11 @@ async def recognition_loop() -> None:
         return
 
     last_emit: dict[str, float] = {}
-    print(f"[face_detection] running. source={settings.source} threshold={settings.threshold} target={settings.target_label!r}")
+    consecutive: dict[str, int] = {}
+    print(
+        f"[face_detection] running. source={settings.source} threshold={settings.threshold} "
+        f"margin={settings.margin} min_consecutive={settings.min_consecutive} target={settings.target_label!r}"
+    )
 
     try:
         while True:
@@ -98,31 +137,49 @@ async def recognition_loop() -> None:
 
             best_name = "Unknown"
             best_score = 0.0
+            second_score = 0.0
 
             for d in dets:
                 emb = engine.embedding(frame, d)
-                name, score = engine.identify(emb, known_embs, known_labels, threshold=settings.threshold)
+                name, score, second = _best_two_scores(emb, known_embs, known_labels)
                 if score > best_score:
                     best_score = score
+                    second_score = second
                     best_name = name
 
-            if best_name and best_name != "Unknown":
-                if settings.target_label and best_name.upper() != settings.target_label.upper():
-                    await asyncio.sleep(0)
-                else:
-                    now = time.time()
-                    prev = last_emit.get(best_name, 0.0)
-                    if now - prev >= settings.cooldown_s:
-                        last_emit[best_name] = now
-                        await hub.broadcast_json(
-                            {
-                                "type": "face_detected",
-                                "name": best_name,
-                                "score": round(float(best_score), 4),
-                                "ts": int(now * 1000),
-                                "message": f"{best_name}'s face has been detected",
-                            }
-                        )
+            # strict acceptance rules to reduce false positives
+            accepted = (
+                best_name != "Unknown"
+                and best_score >= settings.threshold
+                and (best_score - second_score) >= settings.margin
+            )
+
+            # If a target label is set, only accept that label.
+            if settings.target_label:
+                accepted = accepted and (best_name.upper() == settings.target_label.upper())
+
+            if accepted:
+                consecutive[best_name] = consecutive.get(best_name, 0) + 1
+            else:
+                # reset counters when not accepted
+                consecutive.clear()
+
+            if accepted and consecutive.get(best_name, 0) >= settings.min_consecutive:
+                now = time.time()
+                prev = last_emit.get(best_name, 0.0)
+                if now - prev >= settings.cooldown_s:
+                    last_emit[best_name] = now
+                    consecutive.clear()
+                    await hub.broadcast_json(
+                        {
+                            "type": "face_detected",
+                            "name": best_name,
+                            "score": round(float(best_score), 4),
+                            "second": round(float(second_score), 4),
+                            "ts": int(now * 1000),
+                            "message": f"{best_name}'s face has been detected",
+                        }
+                    )
 
             await asyncio.sleep(0)  # yield
     finally:
