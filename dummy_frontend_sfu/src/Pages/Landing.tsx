@@ -64,7 +64,10 @@ export function Landing(){
         socket.send(JSON.stringify(json_message));
     }
     useEffect(()=>{
-        const ws=new WebSocket("ws://127.0.0.1:2000");
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws-api`;
+        console.log("Connecting to WebSocket at:", wsUrl);
+        const ws=new WebSocket(wsUrl);
         setSocket(ws);
         return ()=> ws.close();
     },[])
