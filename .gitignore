@@ -8,4 +8,7 @@ test_generate_password.js
 status
 status/
 
+face_recognition/myvenv/
+mediaMTX_server/mediamtx.exe
+
 commands.txt
