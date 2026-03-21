@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { invite, type InviteBody } from '../api/endpoints'
 import { layout, card, inputStyle, primaryButton, secondaryButton } from '../styles/common'
+import QRCode from 'qrcode'
 
 type KeyValue = { key: string; value: string }
 
@@ -13,6 +14,8 @@ export default function VisitorEntry() {
   const [extraFields, setExtraFields] = useState<KeyValue[]>([{ key: '', value: '' }])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState('')
+  const [inviteMessage, setInviteMessage] = useState('')
 
   const addField = () => setExtraFields((prev) => [...prev, { key: '', value: '' }])
   const updateField = (i: number, field: 'key' | 'value', val: string) => {
@@ -28,6 +31,8 @@ export default function VisitorEntry() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setInviteMessage('')
+    setQrDataUrl('')
     setLoading(true)
     const body: InviteBody = {
       host_email: hostEmail,
@@ -38,8 +43,20 @@ export default function VisitorEntry() {
       if (key.trim()) body[key.trim()] = value
     })
     try {
-      await invite(body)
-      navigate('/emergencies', { replace: true })
+      const result = await invite(body)
+      if (!result?.approved) {
+        setError(result?.error ?? 'Invite not approved')
+        return
+      }
+
+      const qrPayload = {
+        type: 'visitor_entry',
+        issued_at: Date.now(),
+        ...body,
+      }
+      const qrUrl = await QRCode.toDataURL(JSON.stringify(qrPayload))
+      setQrDataUrl(qrUrl)
+      setInviteMessage('Entry submitted successfully. Show this QR code at the gate.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invite failed')
     } finally {
@@ -116,9 +133,24 @@ export default function VisitorEntry() {
           </div>
           {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
           <button type="submit" style={primaryButton} disabled={loading}>
-            {loading ? 'Submitting…' : 'Submit invite'}
+            {loading ? 'Submitting…' : 'Submit entry'}
           </button>
         </form>
+        {inviteMessage && (
+          <p style={{ color: '#4ade80', marginTop: '1rem', marginBottom: '0.75rem' }}>{inviteMessage}</p>
+        )}
+        {qrDataUrl && (
+          <div style={{ marginTop: '0.5rem', display: 'grid', gap: '0.5rem', justifyItems: 'start' }}>
+            <img
+              src={qrDataUrl}
+              alt="Visitor entry QR code"
+              style={{ width: 220, height: 220, background: '#fff', padding: 8, borderRadius: 8 }}
+            />
+            <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
+              QR generated from submitted entry details.
+            </p>
+          </div>
+        )}
         <div style={{ marginTop: '1.5rem' }}>
           <button type="button" style={secondaryButton} onClick={() => navigate('/emergencies')}>
             Go to Emergencies

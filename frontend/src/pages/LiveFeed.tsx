@@ -1,13 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { io } from 'socket.io-client'
 import { Device } from 'mediasoup-client'
-import type { Transport } from 'mediasoup-client/lib/Transport'
-import type { Consumer } from 'mediasoup-client/lib/Consumer'
+import { CustomSchemas, CustomTypes } from '@my-app/shared'
 import { layout, card, secondaryButton, primaryButton } from '../styles/common'
 import { API_BASE } from '../api/client'
-
-const MEDIA_SERVER = 'http://127.0.0.1:4000'
 
 type ViewFilter = 'all' | 'hostel-a' | 'hostel-b' | 'other'
 
@@ -25,45 +21,26 @@ type FaceDetectionEvent = {
   frameJpegBase64?: string
 }
 
-function createDummyCanvasStream(label: string, index: number): MediaStream {
-  const canvas = document.createElement('canvas')
-  canvas.width = 640
-  canvas.height = 480
-  const ctx = canvas.getContext('2d')!
-  const colors = ['#1e3a5f', '#2d5a3d', '#5a2d4a', '#5a4a2d']
-  const color = colors[index % colors.length]
-  let frame = 0
-  function draw() {
-    ctx.fillStyle = color
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.fillStyle = '#fff'
-    ctx.font = '24px sans-serif'
-    ctx.fillText(label, 20, 40)
-    ctx.fillText(`Frame ${frame++}`, 20, 80)
-    const now = new Date().toLocaleTimeString()
-    ctx.fillText(now, 20, 120)
-  }
-  draw()
-  const stream = canvas.captureStream(10)
-  setInterval(draw, 100)
-  return stream
-}
+type FaceWsMessage =
+  | { type: 'face_detected'; name: string; score?: number; ts: number; message?: string }
+  | { type: string; [k: string]: unknown }
 
 export default function LiveFeed() {
   const [view, setView] = useState<ViewFilter>('all')
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
-  const [broadcasting, setBroadcasting] = useState(false)
   const [connected, setConnected] = useState(false)
+  const [buttonPressed, setButtonPressed] = useState(false)
   const [error, setError] = useState('')
   const [faceEvents, setFaceEvents] = useState<FaceDetectionEvent[]>([])
   const [faceStreamStatus, setFaceStreamStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
-  const socketRef = useRef<ReturnType<typeof io> | null>(null)
+  const [faceWsStatus, setFaceWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
+  const [faceWsMessages, setFaceWsMessages] = useState<FaceWsMessage[]>([])
+  const sfuWsRef = useRef<WebSocket | null>(null)
   const deviceRef = useRef<Device | null>(null)
-  const sendTransportRef = useRef<Transport | null>(null)
-  const recvTransportRef = useRef<Transport | null>(null)
-  const consumersRef = useRef<Map<string, Consumer>>(new Map())
+  const recvTransportRef = useRef<any>(null)
   const videoRefsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
+  const deviceLoadedRef = useRef(false)
 
   const attachStream = useCallback((id: string, stream: MediaStream) => {
     const video = videoRefsRef.current.get(id)
@@ -74,118 +51,133 @@ export default function LiveFeed() {
   }, [])
 
   useEffect(() => {
-    const socket = io(MEDIA_SERVER)
-    socketRef.current = socket
-    socket.on('connect', () => setConnected(true))
-    socket.on('disconnect', () => setConnected(false))
-    socket.on('connect_error', (e) => setError(e.message))
+    const host = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
+    const sfuHost = host === 'localhost' ? '127.0.0.1' : host
+    const wsUrl = `ws://${sfuHost}:2000`
 
-    const run = async () => {
+    const ws = new WebSocket(wsUrl)
+    sfuWsRef.current = ws
+
+    ws.onopen = () => setConnected(true)
+    ws.onclose = () => {
+      setConnected(false)
+      setButtonPressed(false)
+    }
+    ws.onerror = () => {
+      setError('Failed to connect to SFU')
+      setConnected(false)
+    }
+
+    ws.onmessage = async (evt) => {
       try {
-        const { rtpCapabilities } = await new Promise<{ rtpCapabilities?: unknown }>((res, rej) => {
-          socket.emit('getRouterRtpCapabilities', null, (r: unknown) => {
-            if (r && typeof r === 'object' && 'error' in r) rej(new Error((r as { error: string }).error))
-            else res(r as { rtpCapabilities: unknown })
-          })
-        })
-        if (!rtpCapabilities) throw new Error('No RTP capabilities')
-
-        const device = new Device()
-        await device.load({ routerRtpCapabilities: rtpCapabilities })
-        deviceRef.current = device
-
-        const { id, iceParameters, iceCandidates, dtlsParameters } = await new Promise<{
-          id: string
-          iceParameters: unknown
-          iceCandidates: unknown[]
-          dtlsParameters: unknown
-        }>((res, rej) => {
-          socket.emit('createRecvTransport', null, (r: unknown) => {
-            if (r && typeof r === 'object' && 'error' in r) rej(new Error((r as { error: string }).error))
-            else res(r as { id: string; iceParameters: unknown; iceCandidates: unknown[]; dtlsParameters: unknown })
-          })
-        })
-
-        const recvTransport = device.createRecvTransport({
-          id,
-          iceParameters,
-          iceCandidates,
-          dtlsParameters,
-        })
-        recvTransportRef.current = recvTransport
-
-        recvTransport.on('connect', async ({ dtlsParameters }, callback) => {
-          socket.emit('connectRecvTransport', { transportId: recvTransport.id, dtlsParameters }, (r: unknown) => {
-            if (r && typeof r === 'object' && 'error' in r) callback(new Error((r as { error: string }).error))
-            else callback()
-          })
-        })
-
-        const pollProducers = async () => {
-          const { producerIds } = await new Promise<{ producerIds: string[] }>((res) => {
-            socket.emit('getProducers', null, (r: { producerIds?: string[] }) => res(r || { producerIds: [] }))
-          })
-          const rtpCap = device.rtpCapabilities
-          for (const producerId of producerIds) {
-            if (consumersRef.current.has(producerId)) continue
-            try {
-              const cons = await new Promise<{
-                id: string
-                producerId: string
-                kind: string
-                rtpParameters: unknown
-              }>((res, rej) => {
-                socket.emit(
-                  'consume',
-                  { transportId: recvTransport.id, producerId, rtpCapabilities: rtpCap },
-                  (r: unknown) => {
-                    if (r && typeof r === 'object' && 'error' in r) rej(new Error((r as { error: string }).error))
-                    else res(r as { id: string; producerId: string; kind: string; rtpParameters: unknown })
-                  }
-                )
-              })
-              const consumer = await recvTransport.consume({
-                id: cons.id,
-                producerId: cons.producerId,
-                kind: cons.kind as 'video' | 'audio',
-                rtpParameters: cons.rtpParameters,
-              })
-              consumersRef.current.set(producerId, consumer)
-              const stream = new MediaStream([consumer.track])
-              setStreams((prev) => {
-                const item: StreamItem = {
-                  id: `stream-${producerId}`,
-                  producerId,
-                  label: `Camera ${prev.length + 1}`,
-                  stream,
-                }
-                setTimeout(() => attachStream(item.id, stream), 0)
-                return [...prev, item]
-              })
-            } catch (e) {
-              console.warn('consume failed', producerId, e)
-            }
+        const recv_message: unknown = JSON.parse(String(evt.data))
+        const whetherCorrect = CustomSchemas.sfu.wsMessageToFrontendSchema.safeParse(recv_message)
+        if (!whetherCorrect.success) {
+          const err_message: CustomTypes.sfu.errMessageType = {
+            type: 'error',
+            error: 'message recieved from server not matching wsMessageToFrontendSchema',
           }
+          ws.send(JSON.stringify(err_message))
+          return
         }
 
-        await pollProducers()
-        const interval = setInterval(pollProducers, 2000)
-        socket.on('newProducer', ({ producerId }: { producerId: string }) => {
-          pollProducers()
-        })
-        return () => clearInterval(interval)
+        const json_message: CustomTypes.sfu.wsMessageToFrontendType = whetherCorrect.data
+
+        if (json_message.type === 'get-rtp-capabilities') {
+          setError('')
+          if (!deviceRef.current) deviceRef.current = new Device()
+          const device = deviceRef.current
+
+          if (!deviceLoadedRef.current) {
+            await device.load({ routerRtpCapabilities: json_message.rtpCapabilities as any })
+            deviceLoadedRef.current = true
+          }
+
+          const send_message: CustomTypes.sfu.createWebrtcTransportToBackendType = {
+            type: 'create-webrtc-transport',
+          }
+          ws.send(JSON.stringify(send_message))
+        } else if (json_message.type === 'send-consumer-transport-params') {
+          if (!deviceRef.current) return
+          const params = json_message.params as any
+          const device = deviceRef.current
+
+          const transport = device.createRecvTransport(params)
+          recvTransportRef.current = transport
+
+          transport.on('connect', ({ dtlsParameters }: any, callback: () => void, errback: (e: Error) => void) => {
+            try {
+              const send_message: CustomTypes.sfu.transportRecvConnectToBackendType = {
+                type: 'transport-recv-connect',
+                transportId: transport.id,
+                dtlsParameters,
+              }
+              ws.send(JSON.stringify(send_message))
+              callback()
+            } catch (e) {
+              errback(e as Error)
+            }
+          })
+
+          const send_message: CustomTypes.sfu.sendDeviceRtpCapabilitiesToBackendType = {
+            type: 'send-device-rtp-capabilities',
+            rtpCapabilities: device.recvRtpCapabilities,
+          }
+          ws.send(JSON.stringify(send_message))
+        } else if (json_message.type === 'invitation-to-consume') {
+          const { cameraName, producerId } = json_message.params
+          const cameraNumber = Number(cameraName.slice(6))
+
+          if (!recvTransportRef.current) return
+          const consumerTransport = recvTransportRef.current
+
+          const cons = await consumerTransport.consume(json_message.params as any)
+
+          const withinUiLimit = Number.isFinite(cameraNumber) && cameraNumber >= 1 && cameraNumber <= 4
+          if (!withinUiLimit) return
+
+          const itemId = `cam-${cameraNumber}`
+          const stream = new MediaStream([cons.track])
+
+          setStreams((prev) => {
+            if (prev.some((p) => p.id === itemId)) return prev
+            const item: StreamItem = {
+              id: itemId,
+              producerId,
+              label: `Camera ${cameraNumber}`,
+              stream,
+            }
+            return [...prev, item]
+          })
+
+          window.setTimeout(() => {
+            attachStream(itemId, stream)
+            const send_message: CustomTypes.sfu.consumerResumeToBackendType = {
+              type: 'consumer-resume',
+              cameraName,
+            }
+            ws.send(JSON.stringify(send_message))
+          }, 50)
+        } else if (json_message.type === 'error') {
+          setError(json_message.error)
+          setButtonPressed(false)
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to connect')
+        setError(e instanceof Error ? e.message : 'Failed to handle SFU message')
+        setButtonPressed(false)
       }
     }
-    run()
 
     return () => {
-      socket.off('newProducer')
-      socket.disconnect()
-      socketRef.current = null
-      recvTransportRef.current?.close()
+      try {
+        ws.close()
+      } catch {
+        // ignore
+      }
+      sfuWsRef.current = null
+      recvTransportRef.current = null
       deviceRef.current = null
+      deviceLoadedRef.current = false
     }
   }, [attachStream])
 
@@ -212,59 +204,52 @@ export default function LiveFeed() {
     return () => es.close()
   }, [])
 
-  const startDummyStreams = async () => {
-    if (!deviceRef.current || !socketRef.current || broadcasting) return
-    setError('')
-    setBroadcasting(true)
-    try {
-      const device = deviceRef.current
-      const socket = socketRef.current
+  useEffect(() => {
+    // FastAPI face detection websocket (default port 8001)
+    const host = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
+    const wsUrl = `ws://${host}:8001/ws`
+    setFaceWsStatus('connecting')
 
-      const { id, iceParameters, iceCandidates, dtlsParameters } = await new Promise<{
-        id: string
-        iceParameters: unknown
-        iceCandidates: unknown[]
-        dtlsParameters: unknown
-      }>((res, rej) => {
-        socket.emit('createSendTransport', null, (r: unknown) => {
-          if (r && typeof r === 'object' && 'error' in r) rej(new Error((r as { error: string }).error))
-          else res(r as { id: string; iceParameters: unknown; iceCandidates: unknown[]; dtlsParameters: unknown })
-        })
-      })
-
-      const sendTransport = device.createSendTransport({
-        id,
-        iceParameters,
-        iceCandidates,
-        dtlsParameters,
-      })
-      sendTransportRef.current = sendTransport
-
-      sendTransport.on('connect', async ({ dtlsParameters }, callback) => {
-        socket.emit('connectSendTransport', { transportId: sendTransport.id, dtlsParameters }, (r: unknown) => {
-          if (r && typeof r === 'object' && 'error' in r) callback(new Error((r as { error: string }).error))
-          else callback()
-        })
-      })
-
-      sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback) => {
-        socket.emit('produce', { transportId: sendTransport.id, kind, rtpParameters, appData }, (r: unknown) => {
-          if (r && typeof r === 'object' && 'error' in r) callback(new Error((r as { error: string }).error))
-          else callback({ id: (r as { id: string }).id })
-        })
-      })
-
-      const labels = ['Hostel A - Cam 1', 'Hostel A - Cam 2', 'Hostel B - Cam 1', 'Hostel B - Cam 2']
-      for (let i = 0; i < 4; i++) {
-        const stream = createDummyCanvasStream(labels[i], i)
-        const track = stream.getVideoTracks()[0]
-        await sendTransport.produce({ track, appData: { source: `dummy-${i}` } })
+    const ws = new WebSocket(wsUrl)
+    ws.onopen = () => setFaceWsStatus('connected')
+    ws.onerror = () => setFaceWsStatus('error')
+    ws.onclose = () => setFaceWsStatus('error')
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(String(evt.data)) as FaceWsMessage
+        setFaceWsMessages((prev) => [msg, ...prev].slice(0, 50))
+      } catch {
+        // ignore
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to start streams')
-    } finally {
-      setBroadcasting(false)
     }
+
+    // keepalive ping every 15s
+    const t = window.setInterval(() => {
+      try {
+        if (ws.readyState === WebSocket.OPEN) ws.send('ping')
+      } catch {
+        // ignore
+      }
+    }, 15000)
+
+    return () => {
+      window.clearInterval(t)
+      ws.close()
+    }
+  }, [])
+
+  const receiveVideos = () => {
+    const ws = sfuWsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN || buttonPressed) return
+
+    setError('')
+    setButtonPressed(true)
+    setStreams([])
+    recvTransportRef.current = null
+    deviceLoadedRef.current = false
+    setFullscreenId(null)
+
+    ws.send(JSON.stringify({ type: 'get-rtp-capabilities' }))
   }
 
   const toggleFullscreen = (id: string) => {
@@ -274,6 +259,7 @@ export default function LiveFeed() {
   const displayStreams = streams.length > 0 ? streams : []
   const placeholders = streams.length === 0 ? ['Camera 1', 'Camera 2', 'Camera 3', 'Camera 4'] : []
   const latestFace = faceEvents[0]
+  const latestWs = faceWsMessages[0]
 
   return (
     <div style={layout}>
@@ -281,7 +267,7 @@ export default function LiveFeed() {
         <Link to="/admin/live-feed-landing" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back</Link>
         <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>Live feed</h1>
         <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>
-          WebRTC streams via SFU. Start dummy streams, then view below. Double-click for fullscreen.
+          WebRTC streams via SFU. Click Receive video to connect, then view below. Double-click for fullscreen.
         </p>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -291,10 +277,10 @@ export default function LiveFeed() {
           <button
             type="button"
             style={primaryButton}
-            onClick={startDummyStreams}
-            disabled={!connected || broadcasting}
+            onClick={receiveVideos}
+            disabled={!connected || buttonPressed}
           >
-            {broadcasting ? 'Starting…' : 'Start dummy streams'}
+            {buttonPressed ? 'Connecting…' : 'Receive video'}
           </button>
         </div>
 
@@ -396,7 +382,7 @@ export default function LiveFeed() {
                     border: '1px solid rgba(148,163,184,0.3)',
                   }}
                 >
-                  <span style={{ color: '#9ca3af' }}>{label} (start dummy streams to view)</span>
+                  <span style={{ color: '#9ca3af' }}>{label} (click Receive video to view)</span>
                 </div>
               )
             })}
@@ -416,16 +402,48 @@ export default function LiveFeed() {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Detections</div>
                   <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                    Stream:{' '}
+                    SSE:{' '}
                     {faceStreamStatus === 'connected'
                       ? 'Connected'
                       : faceStreamStatus === 'connecting'
                         ? 'Connecting…'
                         : 'Error'}
                   </div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
+                    WS:{' '}
+                    {faceWsStatus === 'connected'
+                      ? 'Connected'
+                      : faceWsStatus === 'connecting'
+                        ? 'Connecting…'
+                        : 'Error'}
+                  </div>
                 </div>
                 <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>{faceEvents.length} events</div>
               </div>
+
+              {latestWs?.type === 'face_detected' && (
+                <div
+                  style={{
+                    marginTop: '0.75rem',
+                    padding: '0.75rem',
+                    borderRadius: 10,
+                    border: '1px solid rgba(74, 222, 128, 0.25)',
+                    background: 'rgba(22, 163, 74, 0.08)',
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    {(latestWs as { message?: unknown }).message
+                      ? String((latestWs as { message: unknown }).message)
+                      : `${String((latestWs as { name?: unknown }).name ?? 'Unknown')}'s face has been detected`}
+                  </div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+                    {new Date(Number(latestWs.ts)).toLocaleTimeString()}
+                    {typeof (latestWs as { score?: number }).score === 'number'
+                      ? ` • score ${(latestWs as { score: number }).score.toFixed(3)}`
+                      : null}
+                  </div>
+                </div>
+              )}
 
               <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
                 {latestFace?.frameJpegBase64 ? (

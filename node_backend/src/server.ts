@@ -10,6 +10,7 @@ import dotenv from "dotenv"
 import path from "path"
 import { fileURLToPath } from "url";
 import mongoose from "mongoose" 
+import QRCode from 'qrcode';
 
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
@@ -509,6 +510,48 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
         })
     }
 })
+
+app.post('/invite', async (req: Request, res: Response) => {
+  try {
+    const inviteData = req.body;
+
+    // 1. Basic Validation
+    if (!inviteData.host_email || !inviteData.guest_name || !inviteData.guest_contact_number) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // 2. Add a unique identifier or timestamp to the invite data
+    const qrPayload = {
+      ...inviteData,
+      invite_id: crypto.randomUUID(), // Assuming you are using Node 19+ or have a uuid library
+      created_at: new Date().toISOString()
+    };
+
+    // 3. Convert the data to a JSON string for the QR code
+    const qrString = JSON.stringify(qrPayload);
+
+    // 4. Generate the QR Code as a base64 Data URL
+    const qrDataUrl = await QRCode.toDataURL(qrString, {
+      errorCorrectionLevel: 'H', // High error correction so it scans easily
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#ffffff'
+      }
+    });
+
+    // 5. Return the QR code to the frontend
+    return res.status(200).json({
+      success: true,
+      message: 'Invite successfully created',
+      qrCode: qrDataUrl
+    });
+
+  } catch (error) {
+    console.error('Error generating QR code:', error);
+    return res.status(500).json({ error: 'Failed to generate invite' });
+  }
+});
 
 app.listen(3000,()=>{
     console.log("listening at port 3000")

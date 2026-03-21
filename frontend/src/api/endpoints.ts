@@ -25,8 +25,12 @@ export type InviteBody = {
   guest_contact_number: string
   [key: string]: string
 }
+export type InviteResponse = {
+  approved?: boolean
+  error?: string
+}
 export async function invite(body: InviteBody) {
-  return apiFetch<unknown>('/invite', { method: 'POST', json: body })
+  return apiFetch<InviteResponse>('/invite', { method: 'POST', json: body })
 }
 
 // Emergencies
