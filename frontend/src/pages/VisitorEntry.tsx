@@ -28,6 +28,16 @@ export default function VisitorEntry() {
   const removeField = (i: number) =>
     setExtraFields((prev) => prev.filter((_, j) => j !== i))
 
+  const downloadQr = () => {
+    if (!qrDataUrl) return
+    const safeName = guestName.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'visitor'
+    const link = document.createElement('a')
+    link.href = qrDataUrl
+    link.download = `visitor-qr-${safeName}-${Date.now()}.png`
+    link.rel = 'noopener'
+    link.click()
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -146,6 +156,11 @@ export default function VisitorEntry() {
               alt="Visitor entry QR code"
               style={{ width: 220, height: 220, background: '#fff', padding: 8, borderRadius: 8 }}
             />
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" style={primaryButton} onClick={downloadQr}>
+                Download QR (PNG)
+              </button>
+            </div>
             <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
               QR generated from submitted entry details.
             </p>
