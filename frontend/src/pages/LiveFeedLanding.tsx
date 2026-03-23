@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import collegeLogo from '../assets/IIT ROPAR.png'
+import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, primaryButton, secondaryButton, logoCircle } from '../styles/common'
 
 const linkStyle = { ...primaryButton, textDecoration: 'none', textAlign: 'center' as const }

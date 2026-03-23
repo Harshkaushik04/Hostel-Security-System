@@ -17,7 +17,9 @@ dotenv.config({
 });
 
 const app=express()
-app.use(cors({origin:"*"}))
+app.use(cors({
+    origin:"*"
+}))
 app.use(express.json())
 const JWT_SECRET=process.env.JWT_SECRET
 const MONGO_URL=process.env.MONGO_URL
@@ -553,6 +555,8 @@ app.post('/invite', async (req: Request, res: Response) => {
   }
 });
 
-app.listen(3000,()=>{
-    console.log("listening at port 3000")
-})
+const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
