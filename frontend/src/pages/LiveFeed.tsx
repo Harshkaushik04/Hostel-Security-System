@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Device } from 'mediasoup-client'
 import { CustomSchemas, CustomTypes } from '@my-app/shared'
-import { layout, card, secondaryButton, primaryButton } from '../styles/common'
-import { API_BASE } from '../api/client'
+import { layout, card, secondaryButton, primaryButton, inputStyle } from '../styles/common'
 
 type ViewFilter = 'all' | 'hostel-a' | 'hostel-b' | 'other'
 
@@ -23,17 +22,45 @@ type FaceDetectionEvent = {
 
 type FaceWsMessage =
   | { type: 'face_detected'; name: string; score?: number; ts: number; message?: string }
+  | {
+      type: 'detection_update'
+      cameraId: string
+      ts: number
+      bboxes: Array<{ x: number; y: number; w: number; h: number }>
+      frame_jpeg_base64?: string
+      preview_only?: boolean
+    }
   | { type: string; [k: string]: unknown }
+
+const MIN_CAMERA_SLOTS = 1
+const MAX_CAMERA_SLOTS = 64
+const DEFAULT_CAMERA_SLOTS = 4
+
+function clampCameraSlots(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_CAMERA_SLOTS
+  return Math.min(MAX_CAMERA_SLOTS, Math.max(MIN_CAMERA_SLOTS, Math.round(n)))
+}
+
+function formatDetectionTime(tsMs: number): string {
+  const d = new Date(tsMs)
+  const t = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const ms = tsMs % 1000
+  return `${t}.${String(ms).padStart(3, '0')}`
+}
 
 export default function LiveFeed() {
   const [view, setView] = useState<ViewFilter>('all')
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
+  /** How many camera tiles to show (camera1 … cameraN). */
+  const [maxCameraSlots, setMaxCameraSlots] = useState(DEFAULT_CAMERA_SLOTS)
+  const maxCameraSlotsRef = useRef(DEFAULT_CAMERA_SLOTS)
+  const [focusCameraInput, setFocusCameraInput] = useState('')
+  const [focusHint, setFocusHint] = useState('')
   const [connected, setConnected] = useState(false)
   const [buttonPressed, setButtonPressed] = useState(false)
   const [error, setError] = useState('')
   const [faceEvents, setFaceEvents] = useState<FaceDetectionEvent[]>([])
-  const [faceStreamStatus, setFaceStreamStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
   const [faceWsStatus, setFaceWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
   const [faceWsMessages, setFaceWsMessages] = useState<FaceWsMessage[]>([])
   const sfuWsRef = useRef<WebSocket | null>(null)
@@ -41,6 +68,28 @@ export default function LiveFeed() {
   const recvTransportRef = useRef<any>(null)
   const videoRefsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
   const deviceLoadedRef = useRef(false)
+
+  useEffect(() => {
+    maxCameraSlotsRef.current = maxCameraSlots
+  }, [maxCameraSlots])
+
+  /** If user reduces slots below the currently focused camera, exit focus. */
+  useEffect(() => {
+    if (!fullscreenId) return
+    if (fullscreenId.startsWith('cam-')) {
+      const n = Number(fullscreenId.slice(4))
+      if (Number.isFinite(n) && n > maxCameraSlots) {
+        setFullscreenId(null)
+        setFocusHint(`Cleared focus: only ${maxCameraSlots} slot(s) configured.`)
+      }
+    } else if (fullscreenId.startsWith('placeholder-')) {
+      const idx = Number(fullscreenId.slice('placeholder-'.length))
+      if (Number.isFinite(idx) && idx >= maxCameraSlots) {
+        setFullscreenId(null)
+        setFocusHint(`Cleared focus: only ${maxCameraSlots} slot(s) configured.`)
+      }
+    }
+  }, [maxCameraSlots, fullscreenId])
 
   const attachStream = useCallback((id: string, stream: MediaStream) => {
     const video = videoRefsRef.current.get(id)
@@ -133,31 +182,44 @@ export default function LiveFeed() {
 
           const cons = await consumerTransport.consume(json_message.params as any)
 
-          const withinUiLimit = Number.isFinite(cameraNumber) && cameraNumber >= 1 && cameraNumber <= 4
-          if (!withinUiLimit) return
+          const withinUiLimit =
+            Number.isFinite(cameraNumber) &&
+            cameraNumber >= 1 &&
+            cameraNumber <= maxCameraSlotsRef.current
 
-          const itemId = `cam-${cameraNumber}`
-          const stream = new MediaStream([cons.track])
+          if (withinUiLimit) {
+            const itemId = `cam-${cameraNumber}`
+            const stream = new MediaStream([cons.track])
 
-          setStreams((prev) => {
-            if (prev.some((p) => p.id === itemId)) return prev
-            const item: StreamItem = {
-              id: itemId,
-              producerId,
-              label: `Camera ${cameraNumber}`,
-              stream,
-            }
-            return [...prev, item]
-          })
+            setStreams((prev) => {
+              if (prev.some((p) => p.id === itemId)) return prev
+              const item: StreamItem = {
+                id: itemId,
+                producerId,
+                label: `Camera ${cameraNumber}`,
+                stream,
+              }
+              return [...prev, item]
+            })
 
-          window.setTimeout(() => {
-            attachStream(itemId, stream)
-            const send_message: CustomTypes.sfu.consumerResumeToBackendType = {
-              type: 'consumer-resume',
-              cameraName,
-            }
-            ws.send(JSON.stringify(send_message))
-          }, 50)
+            window.setTimeout(() => {
+              attachStream(itemId, stream)
+              const send_message: CustomTypes.sfu.consumerResumeToBackendType = {
+                type: 'consumer-resume',
+                cameraName,
+              }
+              ws.send(JSON.stringify(send_message))
+            }, 50)
+          } else {
+            // Still resume consumers we don't show, so SFU doesn't leave them paused forever.
+            window.setTimeout(() => {
+              const send_message: CustomTypes.sfu.consumerResumeToBackendType = {
+                type: 'consumer-resume',
+                cameraName,
+              }
+              ws.send(JSON.stringify(send_message))
+            }, 50)
+          }
         } else if (json_message.type === 'error') {
           setError(json_message.error)
           setButtonPressed(false)
@@ -182,59 +244,104 @@ export default function LiveFeed() {
   }, [attachStream])
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
-    if (!token) {
-      setFaceStreamStatus('error')
-      return
-    }
-    setFaceStreamStatus('connecting')
+    // DeepFace FastAPI WebSocket (port 8001). Use 127.0.0.1 when hostname is localhost so we
+    // don't hit IPv6-only ::1 (common Windows issue — uvicorn is IPv4).
+    let cancelled = false
+    let reconnectTimer: number | undefined
+    let pingTimer: number | undefined
+    let socket: WebSocket | null = null
 
-    const url = `${API_BASE}/face-events/stream?token=${encodeURIComponent(token)}`
-    const es = new EventSource(url)
-    es.onopen = () => setFaceStreamStatus('connected')
-    es.onerror = () => setFaceStreamStatus('error')
-    es.onmessage = (msg) => {
-      try {
-        const ev = JSON.parse(msg.data) as FaceDetectionEvent
-        setFaceEvents((prev) => [ev, ...prev].slice(0, 100))
-      } catch {
-        // ignore
+    const buildFaceWsUrl = (): string => {
+      const explicit = (import.meta as ImportMeta & { env: Record<string, string> }).env
+        ?.VITE_DEEPFACE_WS_URL?.trim()
+      if (explicit) return explicit
+      const h = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
+      const wsHost = h === 'localhost' || h === '::1' ? '127.0.0.1' : h
+      return `ws://${wsHost}:8001/ws`
+    }
+
+    const clearPing = () => {
+      if (pingTimer !== undefined) {
+        window.clearInterval(pingTimer)
+        pingTimer = undefined
       }
     }
-    return () => es.close()
-  }, [])
 
-  useEffect(() => {
-    // FastAPI face detection websocket (default port 8001)
-    const host = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
-    const wsUrl = `ws://${host}:8001/ws`
-    setFaceWsStatus('connecting')
-
-    const ws = new WebSocket(wsUrl)
-    ws.onopen = () => setFaceWsStatus('connected')
-    ws.onerror = () => setFaceWsStatus('error')
-    ws.onclose = () => setFaceWsStatus('error')
-    ws.onmessage = (evt) => {
+    const handleMessage = (evt: MessageEvent) => {
       try {
         const msg = JSON.parse(String(evt.data)) as FaceWsMessage
-        setFaceWsMessages((prev) => [msg, ...prev].slice(0, 50))
+        if (msg.type === 'detection_update' && 'cameraId' in msg && 'ts' in msg) {
+          const m = msg as FaceWsMessage & {
+            cameraId: string
+            ts: number
+            bboxes: Array<{ x: number; y: number; w: number; h: number }>
+            frame_jpeg_base64?: string
+            preview_only?: boolean
+          }
+          if (m.preview_only !== true) {
+            const ev: FaceDetectionEvent = {
+              cameraId: m.cameraId,
+              ts: m.ts,
+              bboxes: Array.isArray(m.bboxes) ? m.bboxes : [],
+              frameJpegBase64: m.frame_jpeg_base64,
+            }
+            setFaceEvents((prev) => [ev, ...prev].slice(0, 100))
+          }
+        }
+        if (msg.type === 'face_detected') {
+          setFaceWsMessages((prev) => [msg, ...prev].slice(0, 50))
+        }
       } catch {
         // ignore
       }
     }
 
-    // keepalive ping every 15s
-    const t = window.setInterval(() => {
+    const connect = () => {
+      if (cancelled) return
+      setFaceWsStatus('connecting')
+      clearPing()
       try {
-        if (ws.readyState === WebSocket.OPEN) ws.send('ping')
+        socket?.close()
       } catch {
         // ignore
       }
-    }, 15000)
+      socket = new WebSocket(buildFaceWsUrl())
+
+      socket.onopen = () => {
+        setFaceWsStatus('connected')
+        pingTimer = window.setInterval(() => {
+          try {
+            if (socket?.readyState === WebSocket.OPEN) socket.send('ping')
+          } catch {
+            // ignore
+          }
+        }, 15000)
+      }
+
+      socket.onmessage = handleMessage
+
+      socket.onclose = () => {
+        clearPing()
+        if (cancelled) return
+        setFaceWsStatus('error')
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = undefined
+          connect()
+        }, 3000)
+      }
+    }
+
+    connect()
 
     return () => {
-      window.clearInterval(t)
-      ws.close()
+      cancelled = true
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer)
+      clearPing()
+      try {
+        socket?.close()
+      } catch {
+        // ignore
+      }
     }
   }, [])
 
@@ -256,9 +363,41 @@ export default function LiveFeed() {
     setFullscreenId((prev) => (prev === id ? null : id))
   }
 
-  const displayStreams = streams.length > 0 ? streams : []
-  const placeholders = streams.length === 0 ? ['Camera 1', 'Camera 2', 'Camera 3', 'Camera 4'] : []
-  const latestFace = faceEvents[0]
+  const applyFocusCamera = () => {
+    setFocusHint('')
+    const n = parseInt(focusCameraInput.trim(), 10)
+    if (!Number.isFinite(n) || n < MIN_CAMERA_SLOTS || n > maxCameraSlots) {
+      setFocusHint(`Enter a number between ${MIN_CAMERA_SLOTS} and ${maxCameraSlots}.`)
+      return
+    }
+    const camId = `cam-${n}`
+    const hasStream = streams.some((s) => s.id === camId)
+    if (hasStream) {
+      setFullscreenId(camId)
+      return
+    }
+    if (streams.length === 0) {
+      setFullscreenId(`placeholder-${n - 1}`)
+      return
+    }
+    setFocusHint(`Camera ${n} has no stream yet.`)
+  }
+
+  const visibleStreams = streams.filter((s) => {
+    const n = Number(s.id.replace(/^cam-/, ''))
+    return Number.isFinite(n) && n >= 1 && n <= maxCameraSlots
+  })
+
+  const displayStreams = visibleStreams.length > 0 ? visibleStreams : []
+  const placeholders =
+    streams.length === 0
+      ? Array.from({ length: maxCameraSlots }, (_, i) => `Camera ${i + 1}`)
+      : []
+  const faceEventsSorted = useMemo(
+    () => [...faceEvents].sort((a, b) => b.ts - a.ts),
+    [faceEvents],
+  )
+  const latestFace = faceEventsSorted[0]
   const latestWs = faceWsMessages[0]
 
   return (
@@ -282,6 +421,70 @@ export default function LiveFeed() {
           >
             {buttonPressed ? 'Connecting…' : 'Receive video'}
           </button>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            alignItems: 'center',
+            marginBottom: '0.75rem',
+          }}
+        >
+          <label style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Number of camera slots</label>
+          <input
+            type="number"
+            min={MIN_CAMERA_SLOTS}
+            max={MAX_CAMERA_SLOTS}
+            value={maxCameraSlots}
+            onChange={(e) => setMaxCameraSlots(clampCameraSlots(Number(e.target.value)))}
+            style={{ ...inputStyle, width: 80 }}
+            title="How many cameras to show (camera1 … cameraN)"
+          />
+          <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
+            Showing slots 1–{maxCameraSlots} (matches SFU paths camera1 … camera{maxCameraSlots})
+          </span>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '0.5rem',
+            alignItems: 'center',
+            marginBottom: '1rem',
+          }}
+        >
+          <label style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Focus camera #</label>
+          <input
+            type="number"
+            min={MIN_CAMERA_SLOTS}
+            max={maxCameraSlots}
+            value={focusCameraInput}
+            onChange={(e) => setFocusCameraInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applyFocusCamera()
+            }}
+            placeholder="e.g. 3"
+            style={{ ...inputStyle, width: 88 }}
+          />
+          <button type="button" style={primaryButton} onClick={applyFocusCamera}>
+            Focus
+          </button>
+          {fullscreenId && (
+            <button
+              type="button"
+              style={secondaryButton}
+              onClick={() => {
+                setFullscreenId(null)
+                setFocusHint('')
+              }}
+            >
+              Exit focus
+            </button>
+          )}
+          {focusHint && <span style={{ color: '#fbbf24', fontSize: '0.85rem' }}>{focusHint}</span>}
         </div>
 
         {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
@@ -308,7 +511,9 @@ export default function LiveFeed() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: fullscreenId ? '1fr' : 'repeat(2, 1fr)',
+              gridTemplateColumns: fullscreenId
+                ? '1fr'
+                : 'repeat(auto-fill, minmax(200px, 1fr))',
               gap: '1rem',
             }}
           >
@@ -382,7 +587,7 @@ export default function LiveFeed() {
                     border: '1px solid rgba(148,163,184,0.3)',
                   }}
                 >
-                  <span style={{ color: '#9ca3af' }}>{label} (click Receive video to view)</span>
+                  <span style={{ color: '#9ca3af' }}>{label} </span>
                 </div>
               )
             })}
@@ -402,23 +607,17 @@ export default function LiveFeed() {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Detections</div>
                   <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                    SSE:{' '}
-                    {faceStreamStatus === 'connected'
-                      ? 'Connected'
-                      : faceStreamStatus === 'connecting'
-                        ? 'Connecting…'
-                        : 'Error'}
-                  </div>
-                  <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                    WS:{' '}
+                    DeepFace service (port 8001):{' '}
                     {faceWsStatus === 'connected'
                       ? 'Connected'
                       : faceWsStatus === 'connecting'
                         ? 'Connecting…'
-                        : 'Error'}
+                        : 'Offline — start deepface_service'}
                   </div>
                 </div>
-                <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>{faceEvents.length} events</div>
+                <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
+                  {faceEvents.length} events (newest first)
+                </div>
               </div>
 
               {latestWs?.type === 'face_detected' && (
@@ -475,9 +674,9 @@ export default function LiveFeed() {
               </div>
 
               <div style={{ maxHeight: '420px', overflow: 'auto', display: 'grid', gap: '0.5rem' }}>
-                {faceEvents.slice(0, 25).map((ev) => (
+                {faceEventsSorted.slice(0, 25).map((ev, idx) => (
                   <div
-                    key={`${ev.cameraId}-${ev.ts}`}
+                    key={`${ev.cameraId}-${ev.ts}-${idx}`}
                     style={{
                       border: '1px solid rgba(148,163,184,0.2)',
                       borderRadius: 8,
@@ -487,8 +686,8 @@ export default function LiveFeed() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
                       <div style={{ fontWeight: 600 }}>{ev.cameraId}</div>
-                      <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
-                        {new Date(ev.ts).toLocaleTimeString()}
+                      <div style={{ color: '#9ca3af', fontSize: '0.85rem' }} title={`Unix ms: ${ev.ts}`}>
+                        {formatDetectionTime(ev.ts)}
                       </div>
                     </div>
                     <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginTop: '0.25rem' }}>

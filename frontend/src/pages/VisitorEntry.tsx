@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { invite, type InviteBody } from '../api/endpoints'
-import { layout, card, inputStyle, primaryButton, secondaryButton } from '../styles/common'
+import { layout, card, inputStyle, primaryButton, secondaryButton, backButton } from '../styles/common'
 import QRCode from 'qrcode'
 
 type KeyValue = { key: string; value: string }
@@ -77,7 +77,12 @@ export default function VisitorEntry() {
   return (
     <div style={layout}>
       <div style={card}>
-        <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>Visitor Entry</h1>
+        <Link to="/" style={backButton}>
+          ← Back
+        </Link>
+        <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '0.75rem', marginBottom: '0.5rem' }}>
+          Visitor Entry
+        </h1>
         <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
           Invite a guest. Add optional key-value fields (e.g. WhatsApp contact).
         </p>
