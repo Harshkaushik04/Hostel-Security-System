@@ -6,6 +6,7 @@ Run (from this folder):
   pip install -r requirements.txt
   uvicorn main:app --host 0.0.0.0 --port 8001
 """
+known_encodings, class_names = load_encodings("faces")
 
 from __future__ import annotations
 
@@ -197,6 +198,9 @@ def detection_worker() -> None:
     blocked_emit_for: Optional[str] = None
 
     while not stop_event.is_set():
+
+        best_name = None
+        best_distance = None
         try:
             frame = frame_queue.get(timeout=2.0)
         except queue.Empty:
@@ -286,23 +290,23 @@ def detection_worker() -> None:
                             name = identity_path_to_name(identity)
                         else:
                             name = "Unknown"
-                        if name and name != "Unknown":
-                            best_name = name
-                            best_distance = dist
+                    
+                        best_name = name
+                        best_distance = dist
                             # Label on preview
-                            if bboxes:
-                                bx, by = bboxes[0]["x"], bboxes[0]["y"]
-                                label = f"{name} ({dist:.3f})"
-                                cv2.putText(
-                                    vis,
-                                    label,
-                                    (bx, max(0, by - 8)),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.5,
-                                    (0, 255, 0),
-                                    1,
-                                    cv2.LINE_AA,
-                                )
+                        if bboxes:
+                            bx, by = bboxes[0]["x"], bboxes[0]["y"]
+                            label = f"{name} ({dist:.3f})"
+                            cv2.putText(
+                                vis,
+                                label,
+                                (bx, max(0, by - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (0, 255, 0),
+                                1,
+                                cv2.LINE_AA,
+                            )
             except Exception as exc:
                 logger.debug("DeepFace.find: %s", exc)
 
