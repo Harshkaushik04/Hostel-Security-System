@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import collegeLogo from '../assets/IIT ROPAR.png'
+import collegeLogo from '../assets/IIT Ropar.png'
 import { infoCard } from '../styles/common'
 
 import {

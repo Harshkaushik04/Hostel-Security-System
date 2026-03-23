@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { adminSignIn } from '../api/endpoints'
-import collegeLogo from '../assets/IIT ROPAR.png'
+import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, inputStyle, primaryButton, backButton, logoCircle } from '../styles/common'
 
 export default function AdminSignIn() {

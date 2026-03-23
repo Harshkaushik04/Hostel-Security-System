@@ -7,7 +7,7 @@ import {
   addHostel,
   type AdminPrivilegeApiValue,
 } from '../api/endpoints'
-import collegeLogo from '../assets/IIT ROPAR.png'
+import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, primaryButton, secondaryButton, inputStyle, logoCircle } from '../styles/common'
 
 type Tab = 'hostels' | 'admin'

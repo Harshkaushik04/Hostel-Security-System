@@ -1,0 +1,8 @@
+make .env file inside node_backend/ folder and write these fields in that:
+
+MONGO_URL
+JWT_SECRET
+NAME_SECRET
+ENTRY_NUMBER_SECRET
+PASSWORD_SECRET
+EMAIL_SECRET

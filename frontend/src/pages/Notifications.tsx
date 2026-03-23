@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useNotificationsWebSocket } from '../hooks/useNotificationsWebSocket'
 import { fetchPreviousNotifications } from '../api/endpoints'
-import collegeLogo from '../assets/IIT ROPAR.png'
+import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, secondaryButton, logoCircle } from '../styles/common'
 
 export default function Notifications() {
