@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 FACE_SOURCE = os.getenv("FACE_SOURCE", "rtsp://127.0.0.1:8554/camera1")
 FACE_DB_PATH = os.path.abspath(os.getenv("FACE_DB_PATH", os.path.join(os.path.dirname(__file__), "registered_faces")))
 FACE_CAMERA_ID = os.getenv("FACE_CAMERA_ID", "camera1")
-DEEPFACE_MODEL = os.getenv("DEEPFACE_MODEL", "Facenet")
-DETECTOR_BACKEND = os.getenv("DETECTOR_BACKEND", "opencv")
+DEEPFACE_MODEL = os.getenv("DEEPFACE_MODEL", "ArcFace")
+DETECTOR_BACKEND = os.getenv("DETECTOR_BACKEND", "retinaface")
 # Min seconds between DeepFace.find() calls (heavy)
 PROCESS_INTERVAL_SEC = float(os.getenv("PROCESS_INTERVAL_SEC", "0.6"))
 # Same identity must hold this long before a face_detected event
@@ -234,7 +234,7 @@ def detection_worker() -> None:
             faces = DeepFace.extract_faces(
                 img_path=frame,
                 detector_backend=DETECTOR_BACKEND,
-                enforce_detection=False,
+                enforce_detection=True,
                 align=True,
             )
         except Exception as exc:
@@ -267,12 +267,25 @@ def detection_worker() -> None:
                 if dfs is not None and len(dfs) > 0:
                     df = dfs[0]
                     if hasattr(df, "empty") and not df.empty:
-                        row = df.iloc[0]
+                        MAX_ACCEPT_DISTANCE = 0.2
                         id_col = "identity" if "identity" in df.columns else "Identity"
                         dist_col = "distance" if "distance" in df.columns else "Distance"
-                        identity = str(row.get(id_col, "") or "")
-                        dist = float(row.get(dist_col, 1.0))
-                        name = identity_path_to_name(identity)
+
+                        best_match = None
+                        best_dist = 1.0
+
+                        for _, r in df.iterrows():
+                            d = float(r.get(dist_col, 1.0))
+                            if d < best_dist:
+                                best_dist = d
+                                best_match = r
+
+                        identity = str(best_match.get(id_col, "") or "")
+                        dist = best_dist
+                        if dist <= MAX_ACCEPT_DISTANCE:  # Adjust threshold as needed
+                            name = identity_path_to_name(identity)
+                        else:
+                            name = "Unknown"
                         if name and name != "Unknown":
                             best_name = name
                             best_distance = dist
