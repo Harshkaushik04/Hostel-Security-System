@@ -1,6 +1,6 @@
 """
-Real-time face recognition with DeepFace + FastAPI WebSocket.
-Direct Python API (in-process) — lower latency than the separate REST API.
+Real-time face recognition with face_recognition library + FastAPI WebSocket.
+Uses pre-computed face encodings stored as .npy files.
 
 Run (from this folder):
   pip install -r requirements.txt
@@ -17,7 +17,7 @@ import os
 import queue
 import threading
 import time
-from typing import Any, Optional, Set
+from typing import Optional, Set
 
 # OpenCV + RTSP on Windows: use TCP and reduce buffer delay (must be set before VideoCapture)
 os.environ.setdefault(
@@ -27,6 +27,7 @@ os.environ.setdefault(
 
 import cv2
 import numpy as np
+import face_recognition
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -36,9 +37,7 @@ logger = logging.getLogger(__name__)
 FACE_SOURCE = os.getenv("FACE_SOURCE", "rtsp://127.0.0.1:8554/camera1")
 FACE_DB_PATH = os.path.abspath(os.getenv("FACE_DB_PATH", os.path.join(os.path.dirname(__file__), "registered_faces")))
 FACE_CAMERA_ID = os.getenv("FACE_CAMERA_ID", "camera1")
-DEEPFACE_MODEL = os.getenv("DEEPFACE_MODEL", "ArcFace")
-DETECTOR_BACKEND = os.getenv("DETECTOR_BACKEND", "retinaface")
-# Min seconds between DeepFace.find() calls (heavy)
+# Min seconds between face recognition calls (heavy)
 PROCESS_INTERVAL_SEC = float(os.getenv("PROCESS_INTERVAL_SEC", "0.6"))
 # Same identity must hold this long before a face_detected event
 FACE_STABLE_SECONDS = float(os.getenv("FACE_STABLE_SECONDS", "2.0"))
@@ -46,47 +45,59 @@ FACE_STABLE_SECONDS = float(os.getenv("FACE_STABLE_SECONDS", "2.0"))
 JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "72"))
 # Preview max width (smaller = faster encode + smaller WS payload)
 PREVIEW_MAX_WIDTH = int(os.getenv("PREVIEW_MAX_WIDTH", "640"))
+# Face recognition tolerance (lower = stricter matching)
+FACE_TOLERANCE = float(os.getenv("FACE_TOLERANCE", "0.6"))
 
-app = FastAPI(title="DeepFace recognition WebSocket")
+app = FastAPI(title="Face Recognition WebSocket")
 clients: Set[WebSocket] = set()
 loop_ref: Optional[asyncio.AbstractEventLoop] = None
 stop_event = threading.Event()
 
-# Lazy import so `uvicorn main:app` can load even if user only checks syntax
-_deepface: Any = None
+# Pre-loaded encodings
+known_encodings: list = []
+known_names: list = []
 
 
-def get_deepface():
-    global _deepface
-    if _deepface is None:
-        from deepface import DeepFace as DF
-
-        _deepface = DF
-    return _deepface
-
-
-def identity_path_to_name(identity_path: str) -> str:
-    """DeepFace returns filesystem paths; folder name = person label."""
-    try:
-        parent = os.path.dirname(str(identity_path).replace("\\", "/"))
-        return os.path.basename(parent.rstrip("/")) or "Unknown"
-    except Exception:
-        return "Unknown"
-
-
-def has_db_images() -> bool:
+def load_encodings() -> bool:
+    """Load pre-computed face encodings from the FACE_DB_PATH."""
+    global known_encodings, known_names
+    known_encodings = []
+    known_names = []
+    
     if not os.path.isdir(FACE_DB_PATH):
         logger.error("FACE_DB_PATH is not a directory: %s", FACE_DB_PATH)
         return False
-    for _root, _dirs, files in os.walk(FACE_DB_PATH):
-        for f in files:
-            if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp")):
-                return True
-    logger.warning(
-        "No images under %s — recognition disabled until you add folders per person (see registered_faces/README.md)",
-        FACE_DB_PATH,
-    )
-    return False
+    
+    # Scan for .npy encoding files
+    for root, dirs, files in os.walk(FACE_DB_PATH):
+        for file in files:
+            if file.endswith("_encoding.npy"):
+                # Extract name from file (e.g., "harsh_encoding.npy" -> "harsh")
+                name = file.split("_encoding.npy")[0]
+                filepath = os.path.join(root, file)
+                try:
+                    encoding = np.load(filepath)
+                    known_encodings.append(encoding)
+                    known_names.append(name)
+                    logger.info("Loaded encoding for: %s from %s", name, filepath)
+                except Exception as e:
+                    logger.warning("Failed to load encoding from %s: %s", filepath, e)
+    
+    if not known_encodings:
+        logger.warning(
+            "No encodings found under %s — recognition disabled. "
+            "Please place {name}_encoding.npy files in registered_faces/",
+            FACE_DB_PATH,
+        )
+        return False
+    
+    logger.info("Loaded %d face encodings", len(known_encodings))
+    return True
+
+
+def has_db_encodings() -> bool:
+    """Check if encodings are loaded."""
+    return len(known_encodings) > 0
 
 
 async def broadcast(payload: dict) -> None:
@@ -124,8 +135,11 @@ def detection_worker() -> None:
 
     logger.info("FACE_SOURCE=%s", FACE_SOURCE)
     logger.info("FACE_DB_PATH=%s", FACE_DB_PATH)
+    logger.info("FACE_TOLERANCE=%s", FACE_TOLERANCE)
 
-    db_ok = has_db_images()
+    # Load face encodings once at startup
+    logger.info("Loading face encodings...")
+    db_ok = load_encodings()
 
     cap = cv2.VideoCapture(FACE_SOURCE, cv2.CAP_FFMPEG)
     if not cap.isOpened():
@@ -139,8 +153,7 @@ def detection_worker() -> None:
         logger.error("Could not open stream: %s", FACE_SOURCE)
         return
 
-    # Latest-frame queue: RTSP servers often drop the client if we stop reading while DeepFace.find()
-    # runs for seconds on the CPU. A dedicated reader thread keeps the stream fed continuously.
+    # Latest-frame queue: using a dedicated reader thread keeps the stream fed continuously
     frame_queue: queue.Queue = queue.Queue(maxsize=1)
 
     def reader_loop() -> None:
@@ -185,11 +198,7 @@ def detection_worker() -> None:
         return
 
     logger.info("RTSP OK — first frame shape %s", frame0.shape)
-
-    # Import DeepFace only after RTSP works — avoids long TF import blocking RTSP diagnostics
-    logger.info("Loading DeepFace (first time may download models; this can take several minutes)…")
-    DeepFace = get_deepface()
-    logger.info("DeepFace ready.")
+    logger.info("Face recognition ready using face_recognition library")
 
     last_process = 0.0
     streak_name: Optional[str] = None
@@ -197,6 +206,8 @@ def detection_worker() -> None:
     blocked_emit_for: Optional[str] = None
 
     while not stop_event.is_set():
+        best_name = None
+        best_distance = None
         try:
             frame = frame_queue.get(timeout=2.0)
         except queue.Empty:
@@ -209,7 +220,7 @@ def detection_worker() -> None:
 
         ts_ms = int(now * 1000)
 
-        # Send preview immediately so the UI gets frames even if DeepFace blocks (first model load)
+        # Send preview immediately so the UI gets frames
         preview_fast = encode_preview_jpeg(frame)
         if loop_ref is not None and preview_fast:
             asyncio.run_coroutine_threadsafe(
@@ -231,80 +242,73 @@ def detection_worker() -> None:
         best_distance: Optional[float] = None
 
         try:
-            faces = DeepFace.extract_faces(
-                img_path=frame,
-                detector_backend=DETECTOR_BACKEND,
-                enforce_detection=True,
-                align=True,
-            )
+            # Convert BGR to RGB for face_recognition
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Detect faces using face_recognition (uses dlib's CNN model)
+            face_locations = face_recognition.face_locations(rgb_frame)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+            
+            logger.debug("Detected %d face(s)", len(face_locations))
         except Exception as exc:
-            logger.debug("extract_faces: %s", exc)
-            faces = []
+            logger.debug("Face detection error: %s", exc)
+            face_locations = []
+            face_encodings = []
 
         vis = frame.copy()
-        for f in faces:
-            if not isinstance(f, dict):
-                continue
-            area = f.get("facial_area") or {}
-            try:
-                x, y, w, h = int(area["x"]), int(area["y"]), int(area["w"]), int(area["h"])
-            except (KeyError, TypeError, ValueError):
-                continue
+        
+        # Draw bounding boxes for all detected faces
+        for (top, right, bottom, left) in face_locations:
+            x, y = left, top
+            w, h = right - left, bottom - top
             bboxes.append({"x": x, "y": y, "w": w, "h": h})
-            cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 200, 120), 2)
+            cv2.rectangle(vis, (left, top), (right, bottom), (0, 200, 120), 2)
 
         # Recognize using the first face only (fastest)
-        if db_ok and faces and isinstance(faces[0], dict) and "face" in faces[0]:
-            face_img = faces[0]["face"]
+        if db_ok and face_encodings and has_db_encodings():
+            face_encoding = face_encodings[0]
             try:
-                dfs = DeepFace.find(
-                    img_path=face_img,
-                    db_path=FACE_DB_PATH,
-                    model_name=DEEPFACE_MODEL,
-                    detector_backend="skip",
-                    enforce_detection=False,
+                # Compare the first detected face against known encodings
+                matches = face_recognition.compare_faces(
+                    known_encodings, 
+                    face_encoding, 
+                    tolerance=FACE_TOLERANCE
                 )
-                if dfs is not None and len(dfs) > 0:
-                    df = dfs[0]
-                    if hasattr(df, "empty") and not df.empty:
-                        MAX_ACCEPT_DISTANCE = 0.2
-                        id_col = "identity" if "identity" in df.columns else "Identity"
-                        dist_col = "distance" if "distance" in df.columns else "Distance"
-
-                        best_match = None
-                        best_dist = 1.0
-
-                        for _, r in df.iterrows():
-                            d = float(r.get(dist_col, 1.0))
-                            if d < best_dist:
-                                best_dist = d
-                                best_match = r
-
-                        identity = str(best_match.get(id_col, "") or "")
-                        dist = best_dist
-                        if dist <= MAX_ACCEPT_DISTANCE:  # Adjust threshold as needed
-                            name = identity_path_to_name(identity)
-                        else:
-                            name = "Unknown"
-                        if name and name != "Unknown":
-                            best_name = name
-                            best_distance = dist
-                            # Label on preview
-                            if bboxes:
-                                bx, by = bboxes[0]["x"], bboxes[0]["y"]
-                                label = f"{name} ({dist:.3f})"
-                                cv2.putText(
-                                    vis,
-                                    label,
-                                    (bx, max(0, by - 8)),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.5,
-                                    (0, 255, 0),
-                                    1,
-                                    cv2.LINE_AA,
-                                )
+                face_distances = face_recognition.face_distance(
+                    known_encodings,
+                    face_encoding
+                )
+                
+                if len(face_distances) > 0:
+                    # Find the best match
+                    best_match_index = np.argmin(face_distances)
+                    best_distance = float(face_distances[best_match_index])
+                    
+                    # Accept match if it's within tolerance
+                    if matches[best_match_index]:
+                        best_name = known_names[best_match_index].upper()
+                    else:
+                        best_name = "Unknown"
+                else:
+                    best_name = "Unknown"
+                
+                # Label on preview
+                if bboxes:
+                    x, y = bboxes[0]["x"], bboxes[0]["y"]
+                    label = f"{best_name} ({best_distance:.3f})"
+                    cv2.putText(
+                        vis,
+                        label,
+                        (x, max(0, y - 8)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 0),
+                        1,
+                        cv2.LINE_AA,
+                    )
+                    logger.debug("Best match: %s (distance: %.3f)", best_name, best_distance)
             except Exception as exc:
-                logger.debug("DeepFace.find: %s", exc)
+                logger.debug("Face recognition error: %s", exc)
 
         preview_b64 = encode_preview_jpeg(vis)
 
@@ -323,7 +327,7 @@ def detection_worker() -> None:
                 loop_ref,
             )
 
-        # Stability-based notification (same as old LBPH server)
+        # Stability-based notification
         if not best_name:
             streak_name = None
             streak_start = None
@@ -353,6 +357,7 @@ def detection_worker() -> None:
                         ),
                         loop_ref,
                     )
+                    logger.info("Face detected: %s (score: %.3f)", display_name, score)
                 blocked_emit_for = best_name
                 streak_name = None
                 streak_start = None
@@ -360,6 +365,7 @@ def detection_worker() -> None:
     reader_thread.join(timeout=3.0)
     cap.release()
     logger.info("Detection worker stopped")
+
 
 
 @app.on_event("startup")
@@ -370,7 +376,7 @@ async def on_startup() -> None:
     thread = threading.Thread(target=detection_worker, daemon=True)
     thread.start()
     app.state.worker_thread = thread
-    logger.info("DeepFace WebSocket server started on :8001")
+    logger.info("Face Recognition WebSocket server started on :8001")
 
 
 @app.on_event("shutdown")
@@ -381,7 +387,7 @@ async def on_shutdown() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "service": "deepface_service"}
+    return {"status": "ok", "service": "face_recognition_service"}
 
 
 @app.websocket("/ws")
@@ -395,3 +401,4 @@ async def ws_endpoint(websocket: WebSocket) -> None:
         clients.discard(websocket)
     except Exception:
         clients.discard(websocket)
+
