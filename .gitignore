@@ -11,8 +11,12 @@ repomix-output.xml
 listnetworks
 listnetworks/
 
-deepface_service/.venv/
-deepface_service/registered_faces/
+.venv/
+registered_faces/
+venv/
+.venv
+resistered_faces
+venv
 
 deepface_service/**/__pycache__/
 mediaMTX_server/mediamtx.exe
