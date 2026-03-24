@@ -607,12 +607,12 @@ export default function LiveFeed() {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Detections</div>
                   <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                    DeepFace service (port 8001):{' '}
+                    Face Recognition service (port 8001):{' '}
                     {faceWsStatus === 'connected'
                       ? 'Connected'
                       : faceWsStatus === 'connecting'
                         ? 'Connecting…'
-                        : 'Offline — start deepface_service'}
+                        : 'Offline — start face_recognition service'}
                   </div>
                 </div>
                 <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
