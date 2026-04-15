@@ -7,9 +7,11 @@ export const faceDataSchema=z.object({
 
 export const qrDataSchema=z.object({
     cameraName:z.string(),
-    type:z.string(),
-    issued_at:z.string(),
-    host_email:z.string(),
-    guest_name:z.string(),
-    guest_contact_number:z.string()
+    qr_data:z.object({
+        type:z.string(),
+        issued_at:z.string(),
+        host_email:z.string(),
+        guest_name:z.string(),
+        guest_contact_number:z.string()
+    })
 })

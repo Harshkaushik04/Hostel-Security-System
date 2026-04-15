@@ -90,7 +90,7 @@ async function run() {
             console.log("Spawning strictly ONE internal FFmpeg bridge...");
             const ffmpegArgs = [
                 '-rtsp_transport', 'tcp',
-                '-i', `rtsp://52.237.88.144:8554/${cameraName}`,
+                '-i', `rtsp://localhost:8554/${cameraName}`,
                 '-c:v', 'copy', 
                 '-ssrc', `${ssrc}`,
                 '-payload_type', '112',
@@ -468,7 +468,7 @@ async function run() {
         console.log("Spawning strictly ONE internal FFmpeg bridge...");
         const ffmpegArgs = [
             '-rtsp_transport', 'tcp',
-            '-i', `rtsp://52.237.88.144:8554/${cameraName}`,
+            '-i', `rtsp://localhost:8554/${cameraName}`,
             '-c:v', 'copy', 
             '-ssrc', `${ssrc}`,
             '-payload_type', '112',
@@ -492,7 +492,7 @@ async function run() {
         });
         return ffmpegProcess
     }
-    const res = await axios.get("http://52.237.88.144:9997/v3/paths/list");
+    const res = await axios.get("http://localhost:9997/v3/paths/list");
     const responseData:CustomTypes.sfu.mediaMTXResponseType = res.data;
     for(const stream of responseData.items){
         let cameraName=stream.name;

@@ -101,7 +101,7 @@ export default function LiveFeed() {
 
   useEffect(() => {
     const host = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
-    const sfuHost = host === 'localhost' ? '127.0.0.1' : host
+    const sfuHost = "localhost"
     const wsUrl = `ws://${sfuHost}:2000`
 
     const ws = new WebSocket(wsUrl)

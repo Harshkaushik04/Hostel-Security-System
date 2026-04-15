@@ -36,8 +36,8 @@ face_cache = {}
 qr_cache = {}
 CACHE_TTL = 10.0  
 
-NODE_BACKEND_URL = "http://127.0.0.1:3000"
-MEDIAMTX_API_URL = "http://127.0.0.1:9997/v3/paths/list"
+NODE_BACKEND_URL = "http://localhost:3000"
+MEDIAMTX_API_URL = "http://localhost:9997/v3/paths/list"
 
 # --- 3. Helper Functions ---
 def is_valid_camera(name: str) -> bool:

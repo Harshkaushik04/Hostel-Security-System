@@ -52,6 +52,84 @@ mongoose.connect(MONGO_URL as string).catch((err) => {
     console.log("Database connection failed", err);
 });
 
+
+app.post("/face-data",async (req:Request,res:Response)=>{
+    console.log(`entered [face-data]`)
+    const reqCheck = CustomSchemas.fastapi.faceDataSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.fastapi.faceDataType=req.body;
+        const cameraName:string=reqBody.cameraName;
+        const name:string=reqBody.name;
+        const cameraFound=await camerasModel.findOne({
+            cameraName:cameraName
+        })
+        if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
+        const user=await UserModel.findOne({
+            name:name
+        })
+        if(!user){
+            return res.status(401).json({error:'not permited'})
+        }
+        console.log(`${name} found`)
+        for(const ws of list_ws){
+            ws.send(JSON.stringify({
+                message:`${name} entered in ${cameraFound.hostelName}`
+            }))
+        }
+    }
+})
+
+app.post("/qr-data",async (req:Request,res:Response)=>{
+    console.log(`entered [qr-data]`)
+    const reqCheck = CustomSchemas.fastapi.qrDataSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.fastapi.qrDataType=req.body;
+        const qr_data=reqBody.qr_data;
+        const cameraName:string=reqBody.cameraName;
+        const host_email:string=qr_data.host_email;
+        const guest_name:string=qr_data.guest_name;
+        const guest_contact_number:string=qr_data.guest_contact_number;
+        const cameraFound=await camerasModel.findOne({
+            cameraName:cameraName
+        })
+        if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
+        const host=await UserModel.findOne({
+            email:host_email
+        })
+        const visitor=await visitorsModel.findOne({
+            host_email:host_email,
+            guest_name:guest_name,
+            guest_contact_number:guest_contact_number
+        })
+        if(!host || !visitor){
+            return res.send(401).json({error:'not permitted'})
+        }
+        visitorsModel.deleteOne({
+            host_email:host_email,
+            guest_name:guest_name,
+            guest_contact_number:guest_contact_number
+        })
+        for(const ws of list_ws){
+            ws.send(JSON.stringify({
+                message:`${guest_name} with phone number ${guest_contact_number} entered in ${cameraFound.hostelName} with host ${host.name}`
+            }))
+        }
+    }
+})
+
+
 function authMiddleware(req:Request,res:Response,next:NextFunction){
     if(req.headers.token){
         try{
@@ -347,38 +425,38 @@ app.post("/admin-sign-in", async(req:Request,res:Response)=>{
 
 app.use(authMiddleware)
 
-app.post("/invite", async(req:Request,res:Response)=>{
-    console.log(`entered [invite]`)
-    const inviteCheck = CustomSchemas.invite.InviteRequestSchema.safeParse(req.body)
-    if(!inviteCheck.success){
-        return res.send({
-            approved:false,
-            error:`request schema invalid\n${inviteCheck.error}`
-        })
-    }
-    else{
-        const reqBody:CustomTypes.invite.InviteRequestType=req.body // host_email,guest_name,guest_contact_number
-        const user = await UserModel.findOne({
-            email:reqBody.host_email
-        })
-        if(!user){
-            return res.send({
-                approved:false,
-                error:"host email not found in database"
-            })
-        }
-        else{
-            await InviteModel.create({
-                host_email:reqBody.host_email,
-                guest_name:reqBody.guest_name,
-                guest_contact_number:reqBody.guest_contact_number
-            })
-            return res.send({
-                approved:true
-            })
-        }
-    }
-})
+// app.post("/invite", async(req:Request,res:Response)=>{
+//     console.log(`entered [invite]`)
+//     const inviteCheck = CustomSchemas.invite.InviteRequestSchema.safeParse(req.body)
+//     if(!inviteCheck.success){
+//         return res.send({
+//             approved:false,
+//             error:`request schema invalid\n${inviteCheck.error}`
+//         })
+//     }
+//     else{
+//         const reqBody:CustomTypes.invite.InviteRequestType=req.body // host_email,guest_name,guest_contact_number
+//         const user = await UserModel.findOne({
+//             email:reqBody.host_email
+//         })
+//         if(!user){
+//             return res.send({
+//                 approved:false,
+//                 error:"host email not found in database"
+//             })
+//         }
+//         else{
+//             await InviteModel.create({
+//                 host_email:reqBody.host_email,
+//                 guest_name:reqBody.guest_name,
+//                 guest_contact_number:reqBody.guest_contact_number
+//             })
+//             return res.send({
+//                 approved:true
+//             })
+//         }
+//     }
+// })
 
 app.get("/emergencies",async (req:Request,res:Response)=>{
     console.log(`entered [emergencies]`)
@@ -532,6 +610,7 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
 })
 
 app.post('/invite', async (req: Request, res: Response) => {
+    console.log(`entered [invite]`)
   try {
     const inviteData = req.body;
 
@@ -567,7 +646,7 @@ app.post('/invite', async (req: Request, res: Response) => {
 
     // 5. Return the QR code to the frontend
     return res.status(200).json({
-      success: true,
+      approved: true,
       message: 'Invite successfully created',
       qrCode: qrDataUrl
     });
@@ -577,79 +656,6 @@ app.post('/invite', async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to generate invite' });
   }
 });
-
-app.post("/face-data",async (req:Request,res:Response)=>{
-    const reqCheck = CustomSchemas.fastapi.faceDataSchema.safeParse(req.body)
-    if(!reqCheck.success){
-        return res.send({
-            approved:false,
-            error:`request schema wrong\n${reqCheck.error}`
-        })
-    }
-    else{
-        const reqBody:CustomTypes.fastapi.faceDataType=req.body;
-        const cameraName:string=reqBody.cameraName;
-        const name:string=reqBody.name;
-        const cameraFound=await camerasModel.findOne({
-            cameraName:cameraName
-        })
-        if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
-        const user=await UserModel.findOne({
-            name:name
-        })
-        if(!user){
-            return res.status(401).json({error:'not permited'})
-        }
-        console.log(`${name} found`)
-        for(const ws of list_ws){
-            ws.send(JSON.stringify({
-                message:`${name} entered in ${cameraFound.hostelName}`
-            }))
-        }
-    }
-})
-
-app.post("/qr-data",async (req:Request,res:Response)=>{
-    const reqCheck = CustomSchemas.fastapi.qrDataSchema.safeParse(req.body)
-    if(!reqCheck.success){
-        return res.send({
-            approved:false,
-            error:`request schema wrong\n${reqCheck.error}`
-        })
-    }
-    else{
-        const reqBody:CustomTypes.fastapi.qrDataType=req.body;
-        const cameraName:string=reqBody.cameraName;
-        const host_email:string=reqBody.host_email;
-        const guest_name:string=reqBody.guest_name;
-        const guest_contact_number:string=reqBody.guest_contact_number;
-        const cameraFound=await camerasModel.findOne({
-            cameraName:cameraName
-        })
-        if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
-        const host=await UserModel.findOne({
-            email:host_email
-        })
-        const visitor=await visitorsModel.findOne({
-            host_email:host_email,
-            guest_name:guest_name,
-            guest_contact_number:guest_contact_number
-        })
-        if(!host || !visitor){
-            return res.send(401).json({error:'not permitted'})
-        }
-        visitorsModel.deleteOne({
-            host_email:host_email,
-            guest_name:guest_name,
-            guest_contact_number:guest_contact_number
-        })
-        for(const ws of list_ws){
-            ws.send(JSON.stringify({
-                message:`${guest_name} with phone number ${guest_contact_number} entered in ${cameraFound.hostelName} with host ${host.name}`
-            }))
-        }
-    }
-})
 
 const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
