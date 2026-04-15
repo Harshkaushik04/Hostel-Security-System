@@ -4,13 +4,15 @@ import { Request,Response,NextFunction } from "express"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import {z} from "zod"
 import jwt from "jsonwebtoken"
-import { UserModel,AdminModel,InviteModel,EmergencyModel } from "./db.js"
+import { UserModel,AdminModel,InviteModel,EmergencyModel,camerasModel,visitorsModel } from "./db.js"
 import bcrypt from "bcrypt"
 import dotenv from "dotenv"
 import path from "path"
 import { fileURLToPath } from "url";
 import mongoose from "mongoose" 
 import QRCode from 'qrcode';
+import WebSocket,{WebSocketServer} from "ws";
+import { createServer } from "http"
 
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
@@ -21,6 +23,22 @@ app.use(cors({
     origin:"*"
 }))
 app.use(express.json())
+
+const server = createServer(app);
+const wss = new WebSocketServer({server})
+const list_ws:WebSocket[]=[]
+
+wss.on("connection",function(ws:WebSocket){
+    list_ws.push(ws)
+    ws.on("message",(msg:WebSocket.RawData)=>{
+        const json_message=JSON.parse(msg.toString());
+        console.log(json_message)
+    })
+    ws.onclose=()=>{
+        list_ws.filter(websocket => websocket!=ws)
+    }
+})
+
 const JWT_SECRET=process.env.JWT_SECRET
 const MONGO_URL=process.env.MONGO_URL
 
@@ -541,6 +559,11 @@ app.post('/invite', async (req: Request, res: Response) => {
         light: '#ffffff'
       }
     });
+    await visitorsModel.create({
+        host_email:inviteData.host_email,
+        guest_name:inviteData.guest_name,
+        guest_contact_number:inviteData.guest_contact_number
+    })
 
     // 5. Return the QR code to the frontend
     return res.status(200).json({
@@ -555,8 +578,81 @@ app.post('/invite', async (req: Request, res: Response) => {
   }
 });
 
+app.post("/face-data",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.fastapi.faceDataSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.fastapi.faceDataType=req.body;
+        const cameraName:string=reqBody.cameraName;
+        const name:string=reqBody.name;
+        const cameraFound=await camerasModel.findOne({
+            cameraName:cameraName
+        })
+        if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
+        const user=await UserModel.findOne({
+            name:name
+        })
+        if(!user){
+            return res.status(401).json({error:'not permited'})
+        }
+        console.log(`${name} found`)
+        for(const ws of list_ws){
+            ws.send(JSON.stringify({
+                message:`${name} entered in ${cameraFound.hostelName}`
+            }))
+        }
+    }
+})
+
+app.post("/qr-data",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.fastapi.qrDataSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.fastapi.qrDataType=req.body;
+        const cameraName:string=reqBody.cameraName;
+        const host_email:string=reqBody.host_email;
+        const guest_name:string=reqBody.guest_name;
+        const guest_contact_number:string=reqBody.guest_contact_number;
+        const cameraFound=await camerasModel.findOne({
+            cameraName:cameraName
+        })
+        if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
+        const host=await UserModel.findOne({
+            email:host_email
+        })
+        const visitor=await visitorsModel.findOne({
+            host_email:host_email,
+            guest_name:guest_name,
+            guest_contact_number:guest_contact_number
+        })
+        if(!host || !visitor){
+            return res.send(401).json({error:'not permitted'})
+        }
+        visitorsModel.deleteOne({
+            host_email:host_email,
+            guest_name:guest_name,
+            guest_contact_number:guest_contact_number
+        })
+        for(const ws of list_ws){
+            ws.send(JSON.stringify({
+                message:`${guest_name} with phone number ${guest_contact_number} entered in ${cameraFound.hostelName} with host ${host.name}`
+            }))
+        }
+    }
+})
+
 const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });

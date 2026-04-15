@@ -1,9 +1,9 @@
 /**
- * WebSocket for notifications (server on port 5000)
+ * WebSocket for notifications (server on port 3000)
  */
 import { useEffect, useRef, useState } from 'react'
 
-const WS_URL = 'ws://127.0.0.1:5000'
+const WS_URL = 'ws://127.0.0.1:3000'
 
 export function useNotificationsWebSocket() {
   const [messages, setMessages] = useState<unknown[]>([])
