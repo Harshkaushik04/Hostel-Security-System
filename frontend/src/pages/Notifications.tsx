@@ -13,13 +13,13 @@ export default function Notifications() {
 
   const loadPrevious = async () => {
     setLoading(true)
-    try {
-      const res = await fetchPreviousNotifications({ k })
-      const list = Array.isArray(res) ? res : (res as { notifications?: unknown[] })?.notifications ?? []
-      setPrevious(list)
-    } finally {
-      setLoading(false)
-    }
+    // try {
+    //   const res = await fetchPreviousNotifications({ k })
+    //   const list = Array.isArray(res) ? res : (res as { notifications?: unknown[] })?.notifications ?? []
+    //   setPrevious(list)
+    // } finally {
+    //   setLoading(false)
+    // }
   }
 
   useEffect(() => {

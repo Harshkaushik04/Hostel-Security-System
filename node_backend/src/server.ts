@@ -26,7 +26,7 @@ app.use(express.json())
 
 const server = createServer(app);
 const wss = new WebSocketServer({server})
-const list_ws:WebSocket[]=[]
+let list_ws:WebSocket[]=[]
 
 wss.on("connection",function(ws:WebSocket){
     list_ws.push(ws)
@@ -35,7 +35,7 @@ wss.on("connection",function(ws:WebSocket){
         console.log(json_message)
     })
     ws.onclose=()=>{
-        list_ws.filter(websocket => websocket!=ws)
+        list_ws=list_ws.filter(websocket => websocket!=ws)
     }
 })
 
@@ -659,6 +659,6 @@ app.post('/invite', async (req: Request, res: Response) => {
 
 const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT,  () => {
   console.log(`Server running on port ${PORT}`);
 });

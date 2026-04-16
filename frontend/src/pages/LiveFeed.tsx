@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { Device } from 'mediasoup-client'
 import { CustomSchemas, CustomTypes } from '@my-app/shared'
@@ -13,25 +13,6 @@ type StreamItem = {
   stream: MediaStream
 }
 
-type FaceDetectionEvent = {
-  cameraId: string
-  ts: number
-  bboxes: Array<{ x: number; y: number; w: number; h: number }>
-  frameJpegBase64?: string
-}
-
-type FaceWsMessage =
-  | { type: 'face_detected'; name: string; score?: number; ts: number; message?: string }
-  | {
-      type: 'detection_update'
-      cameraId: string
-      ts: number
-      bboxes: Array<{ x: number; y: number; w: number; h: number }>
-      frame_jpeg_base64?: string
-      preview_only?: boolean
-    }
-  | { type: string; [k: string]: unknown }
-
 const MIN_CAMERA_SLOTS = 1
 const MAX_CAMERA_SLOTS = 64
 const DEFAULT_CAMERA_SLOTS = 4
@@ -41,28 +22,21 @@ function clampCameraSlots(n: number): number {
   return Math.min(MAX_CAMERA_SLOTS, Math.max(MIN_CAMERA_SLOTS, Math.round(n)))
 }
 
-function formatDetectionTime(tsMs: number): string {
-  const d = new Date(tsMs)
-  const t = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  const ms = tsMs % 1000
-  return `${t}.${String(ms).padStart(3, '0')}`
-}
-
 export default function LiveFeed() {
   const [view, setView] = useState<ViewFilter>('all')
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
+  
   /** How many camera tiles to show (camera1 … cameraN). */
   const [maxCameraSlots, setMaxCameraSlots] = useState(DEFAULT_CAMERA_SLOTS)
   const maxCameraSlotsRef = useRef(DEFAULT_CAMERA_SLOTS)
+  
   const [focusCameraInput, setFocusCameraInput] = useState('')
   const [focusHint, setFocusHint] = useState('')
   const [connected, setConnected] = useState(false)
   const [buttonPressed, setButtonPressed] = useState(false)
   const [error, setError] = useState('')
-  const [faceEvents, setFaceEvents] = useState<FaceDetectionEvent[]>([])
-  const [faceWsStatus, setFaceWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
-  const [faceWsMessages, setFaceWsMessages] = useState<FaceWsMessage[]>([])
+  
   const sfuWsRef = useRef<WebSocket | null>(null)
   const deviceRef = useRef<Device | null>(null)
   const recvTransportRef = useRef<any>(null)
@@ -100,7 +74,6 @@ export default function LiveFeed() {
   }, [])
 
   useEffect(() => {
-    const host = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
     const sfuHost = "localhost"
     const wsUrl = `ws://${sfuHost}:2000`
 
@@ -243,108 +216,6 @@ export default function LiveFeed() {
     }
   }, [attachStream])
 
-  useEffect(() => {
-    // DeepFace FastAPI WebSocket (port 8001). Use 127.0.0.1 when hostname is localhost so we
-    // don't hit IPv6-only ::1 (common Windows issue — uvicorn is IPv4).
-    let cancelled = false
-    let reconnectTimer: number | undefined
-    let pingTimer: number | undefined
-    let socket: WebSocket | null = null
-
-    const buildFaceWsUrl = (): string => {
-      const explicit = (import.meta as ImportMeta & { env: Record<string, string> }).env
-        ?.VITE_DEEPFACE_WS_URL?.trim()
-      if (explicit) return explicit
-      const h = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
-      const wsHost = h === 'localhost' || h === '::1' ? '127.0.0.1' : h
-      return `ws://${wsHost}:8001/ws`
-    }
-
-    const clearPing = () => {
-      if (pingTimer !== undefined) {
-        window.clearInterval(pingTimer)
-        pingTimer = undefined
-      }
-    }
-
-    const handleMessage = (evt: MessageEvent) => {
-      try {
-        const msg = JSON.parse(String(evt.data)) as FaceWsMessage
-        if (msg.type === 'detection_update' && 'cameraId' in msg && 'ts' in msg) {
-          const m = msg as FaceWsMessage & {
-            cameraId: string
-            ts: number
-            bboxes: Array<{ x: number; y: number; w: number; h: number }>
-            frame_jpeg_base64?: string
-            preview_only?: boolean
-          }
-          if (m.preview_only !== true) {
-            const ev: FaceDetectionEvent = {
-              cameraId: m.cameraId,
-              ts: m.ts,
-              bboxes: Array.isArray(m.bboxes) ? m.bboxes : [],
-              frameJpegBase64: m.frame_jpeg_base64,
-            }
-            setFaceEvents((prev) => [ev, ...prev].slice(0, 100))
-          }
-        }
-        if (msg.type === 'face_detected') {
-          setFaceWsMessages((prev) => [msg, ...prev].slice(0, 50))
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    const connect = () => {
-      if (cancelled) return
-      setFaceWsStatus('connecting')
-      clearPing()
-      try {
-        socket?.close()
-      } catch {
-        // ignore
-      }
-      socket = new WebSocket(buildFaceWsUrl())
-
-      socket.onopen = () => {
-        setFaceWsStatus('connected')
-        pingTimer = window.setInterval(() => {
-          try {
-            if (socket?.readyState === WebSocket.OPEN) socket.send('ping')
-          } catch {
-            // ignore
-          }
-        }, 15000)
-      }
-
-      socket.onmessage = handleMessage
-
-      socket.onclose = () => {
-        clearPing()
-        if (cancelled) return
-        setFaceWsStatus('error')
-        reconnectTimer = window.setTimeout(() => {
-          reconnectTimer = undefined
-          connect()
-        }, 3000)
-      }
-    }
-
-    connect()
-
-    return () => {
-      cancelled = true
-      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer)
-      clearPing()
-      try {
-        socket?.close()
-      } catch {
-        // ignore
-      }
-    }
-  }, [])
-
   const receiveVideos = () => {
     const ws = sfuWsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN || buttonPressed) return
@@ -393,12 +264,6 @@ export default function LiveFeed() {
     streams.length === 0
       ? Array.from({ length: maxCameraSlots }, (_, i) => `Camera ${i + 1}`)
       : []
-  const faceEventsSorted = useMemo(
-    () => [...faceEvents].sort((a, b) => b.ts - a.ts),
-    [faceEvents],
-  )
-  const latestFace = faceEventsSorted[0]
-  const latestWs = faceWsMessages[0]
 
   return (
     <div style={layout}>
@@ -507,202 +372,89 @@ export default function LiveFeed() {
           <Link to="/admin/past-recordings" style={{ ...secondaryButton, textDecoration: 'none' }}>View past recordings</Link>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: fullscreenId ? '1fr' : '1fr 360px', gap: '1rem' }}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: fullscreenId
-                ? '1fr'
-                : 'repeat(auto-fill, minmax(200px, 1fr))',
-              gap: '1rem',
-            }}
-          >
-            {displayStreams.map((item) => {
-              const isFull = fullscreenId === item.id
-              if (fullscreenId && !isFull) return null
-              return (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  onDoubleClick={() => toggleFullscreen(item.id)}
-                  style={{
-                    position: 'relative',
-                    aspectRatio: '16/9',
-                    background: '#000',
-                    borderRadius: 8,
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    border: '1px solid rgba(148,163,184,0.3)',
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: fullscreenId
+              ? '1fr'
+              : 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: '1rem',
+          }}
+        >
+          {displayStreams.map((item) => {
+            const isFull = fullscreenId === item.id
+            if (fullscreenId && !isFull) return null
+            return (
+              <div
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                onDoubleClick={() => toggleFullscreen(item.id)}
+                style={{
+                  position: 'relative',
+                  aspectRatio: '16/9',
+                  background: '#000',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  border: '1px solid rgba(148,163,184,0.3)',
+                }}
+              >
+                <video
+                  ref={(el) => {
+                    if (el) {
+                      videoRefsRef.current.set(item.id, el)
+                      el.srcObject = item.stream
+                      el.play().catch(() => {})
+                    }
                   }}
-                >
-                  <video
-                    ref={(el) => {
-                      if (el) {
-                        videoRefsRef.current.set(item.id, el)
-                        el.srcObject = item.stream
-                        el.play().catch(() => {})
-                      }
-                    }}
-                    autoPlay
-                    playsInline
-                    muted
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                  />
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: 8,
-                      left: 8,
-                      background: 'rgba(0,0,0,0.6)',
-                      color: '#fff',
-                      padding: '4px 8px',
-                      borderRadius: 4,
-                      fontSize: '0.85rem',
-                    }}
-                  >
-                    {item.label} — double-click fullscreen
-                  </div>
-                </div>
-              )
-            })}
-            {placeholders.map((label, i) => {
-              const id = `placeholder-${i}`
-              const isFull = fullscreenId === id
-              if (fullscreenId && !isFull) return null
-              return (
-                <div
-                  key={id}
-                  role="button"
-                  tabIndex={0}
-                  onDoubleClick={() => toggleFullscreen(id)}
-                  style={{
-                    aspectRatio: '16/9',
-                    background: 'rgba(0,0,0,0.5)',
-                    borderRadius: 8,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    border: '1px solid rgba(148,163,184,0.3)',
-                  }}
-                >
-                  <span style={{ color: '#9ca3af' }}>{label} </span>
-                </div>
-              )
-            })}
-          </div>
-
-          {!fullscreenId && (
-            <div
-              style={{
-                border: '1px solid rgba(148,163,184,0.25)',
-                borderRadius: 10,
-                padding: '0.9rem',
-                background: 'rgba(15,23,42,0.35)',
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Detections</div>
-                  <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                    DeepFace service (port 8001):{' '}
-                    {faceWsStatus === 'connected'
-                      ? 'Connected'
-                      : faceWsStatus === 'connecting'
-                        ? 'Connecting…'
-                        : 'Offline — start deepface_service'}
-                  </div>
-                </div>
-                <div style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-                  {faceEvents.length} events (newest first)
-                </div>
-              </div>
-
-              {latestWs?.type === 'face_detected' && (
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
                 <div
                   style={{
-                    marginTop: '0.75rem',
-                    padding: '0.75rem',
-                    borderRadius: 10,
-                    border: '1px solid rgba(74, 222, 128, 0.25)',
-                    background: 'rgba(22, 163, 74, 0.08)',
+                    position: 'absolute',
+                    bottom: 8,
+                    left: 8,
+                    background: 'rgba(0,0,0,0.6)',
+                    color: '#fff',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    fontSize: '0.85rem',
                   }}
                 >
-                  <div style={{ fontWeight: 700 }}>
-                    {(latestWs as { message?: unknown }).message
-                      ? String((latestWs as { message: unknown }).message)
-                      : `${String((latestWs as { name?: unknown }).name ?? 'Unknown')}'s face has been detected`}
-                  </div>
-                  <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-                    {new Date(Number(latestWs.ts)).toLocaleTimeString()}
-                    {typeof (latestWs as { score?: number }).score === 'number'
-                      ? ` • score ${(latestWs as { score: number }).score.toFixed(3)}`
-                      : null}
-                  </div>
+                  {item.label} — double-click fullscreen
                 </div>
-              )}
-
-              <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
-                {latestFace?.frameJpegBase64 ? (
-                  <img
-                    alt="Latest detection frame"
-                    src={`data:image/jpeg;base64,${latestFace.frameJpegBase64}`}
-                    style={{
-                      width: '100%',
-                      borderRadius: 8,
-                      border: '1px solid rgba(148,163,184,0.25)',
-                      display: 'block',
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: '100%',
-                      borderRadius: 8,
-                      border: '1px dashed rgba(148,163,184,0.25)',
-                      padding: '1rem',
-                      color: '#9ca3af',
-                      fontSize: '0.9rem',
-                      textAlign: 'center',
-                    }}
-                  >
-                    No snapshot yet
-                  </div>
-                )}
               </div>
-
-              <div style={{ maxHeight: '420px', overflow: 'auto', display: 'grid', gap: '0.5rem' }}>
-                {faceEventsSorted.slice(0, 25).map((ev, idx) => (
-                  <div
-                    key={`${ev.cameraId}-${ev.ts}-${idx}`}
-                    style={{
-                      border: '1px solid rgba(148,163,184,0.2)',
-                      borderRadius: 8,
-                      padding: '0.6rem 0.65rem',
-                      background: 'rgba(2,6,23,0.35)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
-                      <div style={{ fontWeight: 600 }}>{ev.cameraId}</div>
-                      <div style={{ color: '#9ca3af', fontSize: '0.85rem' }} title={`Unix ms: ${ev.ts}`}>
-                        {formatDetectionTime(ev.ts)}
-                      </div>
-                    </div>
-                    <div style={{ color: '#9ca3af', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-                      Faces: {ev.bboxes.length}
-                    </div>
-                  </div>
-                ))}
-                {faceEvents.length === 0 && (
-                  <div style={{ color: '#9ca3af', fontSize: '0.95rem', padding: '0.5rem 0' }}>
-                    Waiting for first detection…
-                  </div>
-                )}
+            )
+          })}
+          {placeholders.map((label, i) => {
+            const id = `placeholder-${i}`
+            const isFull = fullscreenId === id
+            if (fullscreenId && !isFull) return null
+            return (
+              <div
+                key={id}
+                role="button"
+                tabIndex={0}
+                onDoubleClick={() => toggleFullscreen(id)}
+                style={{
+                  aspectRatio: '16/9',
+                  background: 'rgba(0,0,0,0.5)',
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  border: '1px solid rgba(148,163,184,0.3)',
+                }}
+              >
+                <span style={{ color: '#9ca3af' }}>{label} </span>
               </div>
-            </div>
-          )}
+            )
+          })}
         </div>
       </div>
     </div>
