@@ -29,7 +29,10 @@ if [ $? != 0 ]; then
   # Window 4: SFU Server
   tmux new-window -t $SESSION -n "sfu_server"
   tmux send-keys -t $SESSION:4 "cd sfu_server && npm run dev" C-m
-fi
+
+  tmux new-window -t $SESSION -n "fastapi_server"
+  tmux send-keys -t $SESSION:5 "cd face_recognition && source ../../venv/bin/activate && python3 fastapi_server.py" C-m
+  fi
 
 # Attach your current terminal to the newly created session
 tmux attach-session -t $SESSION
