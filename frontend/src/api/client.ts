@@ -2,7 +2,7 @@
  * API client for Node backend (port 3000)
  */
 
-export const API_BASE = import.meta.env.VITE_BACKEND_IP || 'http://127.0.0.1:3000';
+export const API_BASE = 'http://localhost:3000';
 
 export async function apiFetch<T>(
   path: string,

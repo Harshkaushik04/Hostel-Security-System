@@ -45,7 +45,6 @@ export default function VisitorEntry() {
     setQrDataUrl('')
     setLoading(true)
     const body: InviteBody = {
-      host_email: hostEmail,
       guest_name: guestName,
       guest_contact_number: guestContact,
     }

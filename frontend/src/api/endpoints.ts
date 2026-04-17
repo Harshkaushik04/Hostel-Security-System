@@ -20,7 +20,6 @@ export async function adminSignIn(body: SignInBody) {
 
 // Invite (visitor entry)
 export type InviteBody = {
-  host_email: string
   guest_name: string
   guest_contact_number: string
   [key: string]: string
@@ -97,7 +96,7 @@ export async function uploadManually(body: Record<string, unknown>) {
   return apiFetch<unknown>('/upload-manually', { method: 'POST', json: body })
 }
 export async function uploadCsv(body: FormData) {
-  const API_BASE = 'http://127.0.0.1:3000'
+  const API_BASE = 'http://localhost:3000'
   const res = await fetch(`${API_BASE}/upload-csv`, {
     method: 'POST',
     body,

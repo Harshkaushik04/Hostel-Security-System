@@ -6,3 +6,6 @@ NAME_SECRET
 ENTRY_NUMBER_SECRET
 PASSWORD_SECRET
 EMAIL_SECRET
+
+mongodb command:
+mongod --dbpath /home/harsh/mongodb-data --bind_ip 127.0.0.1,10.230.170.57
