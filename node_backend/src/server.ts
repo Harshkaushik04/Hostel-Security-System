@@ -77,11 +77,15 @@ app.post("/face-data",async (req:Request,res:Response)=>{
             return res.status(401).json({error:'not permited'})
         }
         console.log(`${name} found`)
+        const message=`${name} entered in ${cameraFound.hostelName}`
         for(const ws of list_ws){
             ws.send(JSON.stringify({
-                message:`${name} entered in ${cameraFound.hostelName}`
+                message:message
             }))
         }
+        return res.json({
+            message:message
+        })
     }
 })
 
@@ -89,22 +93,28 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
     console.log(`entered [qr-data]`)
     const reqCheck = CustomSchemas.fastapi.qrDataSchema.safeParse(req.body)
     if(!reqCheck.success){
+        console.log("[reqcheck-failure]")
+        console.log("req.body:")
+        for(const [k,v] of Object.entries(req.body)){
+            console.log(`${k}:${v}`)
+        }
         return res.send({
             approved:false,
             error:`request schema wrong\n${reqCheck.error}`
         })
     }
     else{
+        console.log("[reqcheck-success]")
         const reqBody:CustomTypes.fastapi.qrDataType=req.body;
-        const qr_data=reqBody.qr_data;
         const cameraName:string=reqBody.cameraName;
-        const host_email:string=qr_data.host_email;
-        const guest_name:string=qr_data.guest_name;
-        const guest_contact_number:string=qr_data.guest_contact_number;
+        const host_email:string=reqBody.host_email;
+        const guest_name:string=reqBody.guest_name;
+        const guest_contact_number:string=reqBody.guest_contact_number;
         const cameraFound=await camerasModel.findOne({
             cameraName:cameraName
         })
         if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
+        console.log("[camera-found]")
         const host=await UserModel.findOne({
             email:host_email
         })
@@ -116,16 +126,28 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
         if(!host || !visitor){
             return res.send(401).json({error:'not permitted'})
         }
-        visitorsModel.deleteOne({
+        console.log("[host and visitor found]")
+        await visitorsModel.deleteOne({
             host_email:host_email,
             guest_name:guest_name,
             guest_contact_number:guest_contact_number
         })
+        const message=`${guest_name} with phone number ${guest_contact_number} entered in ${cameraFound.hostelName} with host ${host.name}`;
         for(const ws of list_ws){
-            ws.send(JSON.stringify({
-                message:`${guest_name} with phone number ${guest_contact_number} entered in ${cameraFound.hostelName} with host ${host.name}`
-            }))
+            try{
+                if(ws.readyState == WebSocket.OPEN){
+                    ws.send(JSON.stringify({
+                        message:message
+                    }))
+                }
+            }
+            catch(e){
+                console.log(`couldnt send to a ws connection,length of ws_list=${list_ws.length}`)
+            }
         }
+        return res.json({
+            message:message
+        })
     }
 })
 
@@ -612,26 +634,36 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
 app.post('/invite', async (req: Request, res: Response) => {
     console.log(`entered [invite]`)
   try {
-    const inviteData = req.body;
-
-    // 1. Basic Validation
-    if (!inviteData.host_email || !inviteData.guest_name || !inviteData.guest_contact_number) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    const reqCheck = CustomSchemas.invite.InviteRequestSchema.safeParse(req.body);
+    if(!reqCheck.success){
+        return res.status(400).json({ error: 'Missing required fields' });
     }
-
-    // 2. Add a unique identifier or timestamp to the invite data
+    const inviteData:CustomTypes.invite.InviteRequestType=req.body;
+    let token=req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload; //will always work because validated in authMiddleware
+    const host_email:string=decryptedData.email;
+    const found=await UserModel.findOne({
+        email:host_email
+    })
+    if(!found){
+        res.json({
+            error:"host is unregistered"
+        })
+    }
     const qrPayload = {
       ...inviteData,
-      invite_id: crypto.randomUUID(), // Assuming you are using Node 19+ or have a uuid library
+      invite_id: crypto.randomUUID(), 
       created_at: new Date().toISOString()
     };
-
-    // 3. Convert the data to a JSON string for the QR code
     const qrString = JSON.stringify(qrPayload);
-
-    // 4. Generate the QR Code as a base64 Data URL
     const qrDataUrl = await QRCode.toDataURL(qrString, {
-      errorCorrectionLevel: 'H', // High error correction so it scans easily
+      errorCorrectionLevel: 'H', // High error correction 
       margin: 1,
       color: {
         dark: '#000000',
@@ -639,12 +671,10 @@ app.post('/invite', async (req: Request, res: Response) => {
       }
     });
     await visitorsModel.create({
-        host_email:inviteData.host_email,
+        host_email:host_email,
         guest_name:inviteData.guest_name,
         guest_contact_number:inviteData.guest_contact_number
     })
-
-    // 5. Return the QR code to the frontend
     return res.status(200).json({
       approved: true,
       message: 'Invite successfully created',

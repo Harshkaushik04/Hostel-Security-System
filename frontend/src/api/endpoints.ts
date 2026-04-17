@@ -20,7 +20,6 @@ export async function adminSignIn(body: SignInBody) {
 
 // Invite (visitor entry)
 export type InviteBody = {
-  host_email: string
   guest_name: string
   guest_contact_number: string
   [key: string]: string
