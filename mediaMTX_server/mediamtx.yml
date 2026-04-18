@@ -793,6 +793,5 @@ paths:
   # Settings under path "all_others" are applied to all paths that
   # do not match another entry.
   all_others:
-    runOnReady: 'curl http://127.0.0.1:2000/stream-started?name=$MTX_PATH ; curl http://127.0.0.1:6500/stream-started?name=$MTX_PATH'
-    runOnNotReady: 'curl http://127.0.0.1:2000/stream-stopped?name=$MTX_PATH ; curl http://127.0.0.1:6500/stream-stopped?name=$MTX_PATH'
-    
+    runOnReady: 'sh -c "curl http://127.0.0.1:2000/stream-started?name=$MTX_PATH ; curl http://127.0.0.1:6500/stream-started?name=$MTX_PATH"'
+    runOnNotReady: 'sh -c "curl http://127.0.0.1:2000/stream-stopped?name=$MTX_PATH ; curl http://127.0.0.1:6500/stream-stopped?name=$MTX_PATH"'
