@@ -9,6 +9,7 @@ import cors from "cors"
 import console from 'console';
 import type { streamDetailsType } from '../../shared/types/sfu.js';
 import axios from 'axios';
+import "dotenv/config"
 import type { CursorPos } from 'readline';
 
 function getLocalIp() {
@@ -25,7 +26,9 @@ function getLocalIp() {
 }
 
 // const LAN_IP = "10.230.170.57";
-const LAN_IP = getLocalIp();
+// const LAN_IP = getLocalIp();
+// announced_ip is ip of machine running sfu_server
+const LAN_IP = process.env.ANNOUNCED_IP || getLocalIp(); 
 console.log(`[NETWORK] Mediasoup will announce IP: ${LAN_IP}`);
 
 let worker:mediasoup.types.Worker<mediasoup.types.AppData>|null=null;
@@ -90,7 +93,7 @@ async function run() {
             console.log("Spawning strictly ONE internal FFmpeg bridge...");
             const ffmpegArgs = [
                 '-rtsp_transport', 'tcp',
-                '-i', `rtsp://localhost:8554/${cameraName}`,
+                '-i', `rtsp://${process.env.MEDIAMTX_IP}:8554/${cameraName}`,
                 '-c:v', 'copy', 
                 '-ssrc', `${ssrc}`,
                 '-payload_type', '112',
@@ -439,7 +442,7 @@ async function run() {
     worker = await mediasoup.createWorker({
         logLevel: 'warn',
         rtcMinPort: 40000, 
-        rtcMaxPort: 49999
+        rtcMaxPort: 40099
     });
 
     worker.on('died', () => {
@@ -468,7 +471,7 @@ async function run() {
         console.log("Spawning strictly ONE internal FFmpeg bridge...");
         const ffmpegArgs = [
             '-rtsp_transport', 'tcp',
-            '-i', `rtsp://localhost:8554/${cameraName}`,
+            '-i', `rtsp://${process.env.MEDIAMTX_IP}:8554/${cameraName}`,
             '-c:v', 'copy', 
             '-ssrc', `${ssrc}`,
             '-payload_type', '112',
@@ -492,7 +495,7 @@ async function run() {
         });
         return ffmpegProcess
     }
-    const res = await axios.get("http://localhost:9997/v3/paths/list");
+    const res = await axios.get(`http://${process.env.MEDIAMTX_IP}:9997/v3/paths/list`);
     const responseData:CustomTypes.sfu.mediaMTXResponseType = res.data;
     for(const stream of responseData.items){
         let cameraName=stream.name;

@@ -74,7 +74,7 @@ export default function LiveFeed() {
   }, [])
 
   useEffect(() => {
-    const sfuHost = "localhost"
+    const sfuHost = import.meta.env.VITE_SFU_HOST
     const wsUrl = `ws://${sfuHost}:2000`
 
     const ws = new WebSocket(wsUrl)
