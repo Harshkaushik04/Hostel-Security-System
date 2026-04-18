@@ -8,4 +8,4 @@ EXPOSE 8000
 EXPOSE 8001
 EXPOSE 9997
 WORKDIR /app/mediaMTX_server
-CMD ["./mediamtx"]
+ENTRYPOINT ["/app/mediaMTX_server/docker-entrypoint.sh"]
