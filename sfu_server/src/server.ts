@@ -27,7 +27,8 @@ function getLocalIp() {
 
 // const LAN_IP = "10.230.170.57";
 // const LAN_IP = getLocalIp();
-const LAN_IP = process.env.ANNOUNCED_IP || getLocalIp(); // need 127.0.0.1 for docker conatainer
+// announced_ip is ip of machine running sfu_server
+const LAN_IP = process.env.ANNOUNCED_IP || getLocalIp(); 
 console.log(`[NETWORK] Mediasoup will announce IP: ${LAN_IP}`);
 
 let worker:mediasoup.types.Worker<mediasoup.types.AppData>|null=null;
