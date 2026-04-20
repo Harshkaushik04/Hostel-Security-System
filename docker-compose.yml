@@ -1,0 +1,58 @@
+services:
+  mongodb:
+    image: mongo:latest
+    volumes:
+      -~/mongodb-data
+  mediamtx_server:
+    build:
+      context: ./
+      dockerfile: Dockerfiles/mediamtx.Dockerfile
+    environment:
+      - SFU_HOST=dep_sfu_server
+      - FASTAPI_HOST=dep_fastapi_server
+    ports:
+      - '8000:8000'
+      - '8001:8001'
+      - '9997:9997'
+      - '8554:8554'
+    entrypoint: mediaMTX_server/docker-entrypoint.sh
+  sfu_server:
+    build:
+      context: ./
+      dockerfile: Dockerfiles/sfu_server.Dockerfile
+    environment:
+      - MEDIAMTX_IP=dep_mediamtx
+    ports:
+      - '40000-40099:40000-40099/udp'
+      - '40000-40099:40000-40099/tcp'
+      - '2000:2000'
+    depends_on:
+      - mediamtx_server
+  fastapi_server:
+    build:
+      context: ./
+      dockerfile: Dockerfiles/fastapi_server.Dockerfile
+    ports:
+      - '6500:6500'
+    depends_on:
+      - mediamtx_server
+  node_backend:
+    build:
+      context: ./
+      dockerfile: Dockerfiles/node_backend.Dockerfile
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017/DEP
+    ports:
+      - '3000:3000'
+    depends_on:
+      - mongo
+      - fastapi_server
+  frontend:
+    build:
+      context: ./
+      dockerfile: Dockerfiles/frontend.Dockerfile
+    ports:
+      - '5173:5173'
+    depends_on:
+      - node_backend
+      - sfu_server
