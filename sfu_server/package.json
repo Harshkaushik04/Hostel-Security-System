@@ -18,6 +18,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/mongoose": "^5.11.96",
     "@types/typescript": "^0.4.29",
     "@types/ws": "^8.18.1",
     "axios": "^1.13.6",
@@ -28,6 +29,7 @@
     "flatbuffers": "^25.9.23",
     "jsonwebtoken": "^9.0.3",
     "mediasoup": "^3.19.18",
+    "mongoose": "^9.5.0",
     "typescript": "^5.9.3",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
