@@ -4,12 +4,25 @@ import { addManually, editUser, deleteUser, uploadCsv } from '../api/endpoints'
 import { layout, card, primaryButton, secondaryButton, inputStyle } from '../styles/common'
 
 export default function ManageEdit() {
-  const [addData, setAddData] = useState('')
+  const [addName, setAddName] = useState('')
+  const [addEmail, setAddEmail] = useState('')
+  const [addPassword, setAddPassword] = useState('')
+  const [addEntryNumber, setAddEntryNumber] = useState('')
+  const [addHostelName, setAddHostelName] = useState('')
   const [addResult, setAddResult] = useState('')
-  const [editData, setEditData] = useState('')
   const [editResult, setEditResult] = useState('')
-  const [deleteData, setDeleteData] = useState('')
   const [deleteResult, setDeleteResult] = useState('')
+  const [editFilterBy, setEditFilterBy] = useState<'email' | 'entry_number'>('email')
+  const [editFilterValue, setEditFilterValue] = useState('')
+  const [editTarget, setEditTarget] = useState<{ filterBy: 'email' | 'entry_number'; value: string } | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [editEntryNumber, setEditEntryNumber] = useState('')
+  const [editHostelName, setEditHostelName] = useState('')
+  const [deleteFilterBy, setDeleteFilterBy] = useState<'email' | 'entry_number'>('email')
+  const [deleteFilterValue, setDeleteFilterValue] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ filterBy: 'email' | 'entry_number'; value: string } | null>(null)
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [csvResult, setCsvResult] = useState('')
   const [loading, setLoading] = useState(false)
@@ -29,18 +42,34 @@ export default function ManageEdit() {
   const handleAddManually = async () => {
     setError('')
     setAddResult('')
+    if (!addName.trim() || !addEmail.trim() || !addPassword.trim() || !addEntryNumber.trim() || !addHostelName.trim()) {
+      setError('Fill all add-student fields before submitting.')
+      return
+    }
     setLoading(true)
     try {
-      const body = JSON.parse(addData || '{}')
+      const body = {
+        type: 'student',
+        name: addName.trim(),
+        email: addEmail.trim(),
+        password: addPassword,
+        entry_number: addEntryNumber.trim(),
+        hostel_name: addHostelName.trim(),
+      }
       const res = await addManually(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
         setError(backendError)
       } else {
         setAddResult(JSON.stringify(res))
+        setAddName('')
+        setAddEmail('')
+        setAddPassword('')
+        setAddEntryNumber('')
+        setAddHostelName('')
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid JSON or request failed')
+      setError(e instanceof Error ? e.message : 'Request failed')
     } finally {
       setLoading(false)
     }
@@ -49,9 +78,28 @@ export default function ManageEdit() {
   const handleEditUser = async () => {
     setError('')
     setEditResult('')
+    if (!editTarget) {
+      setError('First choose a filter and click "Filter" in Edit section.')
+      return
+    }
+    if (!editName.trim() || !editEmail.trim() || !editPassword.trim() || !editEntryNumber.trim() || !editHostelName.trim()) {
+      setError('Fill all edit fields before submitting.')
+      return
+    }
     setLoading(true)
     try {
-      const body = JSON.parse(editData || '{}')
+      const body = {
+        type: 'student',
+        filterBy: editTarget.filterBy,
+        value: editTarget.value,
+        changed: {
+          name: editName.trim(),
+          email: editEmail.trim(),
+          password: editPassword,
+          entry_number: editEntryNumber.trim(),
+          hostel_name: editHostelName.trim(),
+        },
+      }
       const res = await editUser(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -69,9 +117,17 @@ export default function ManageEdit() {
   const handleDeleteUser = async () => {
     setError('')
     setDeleteResult('')
+    if (!deleteTarget) {
+      setError('First choose a filter and click "Filter" in Delete section.')
+      return
+    }
     setLoading(true)
     try {
-      const body = JSON.parse(deleteData || '{}')
+      const body = {
+        type: 'student',
+        filterBy: deleteTarget.filterBy,
+        value: deleteTarget.value,
+      }
       const res = await deleteUser(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -84,6 +140,28 @@ export default function ManageEdit() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyEditFilter = () => {
+    setError('')
+    setEditResult('')
+    const value = editFilterValue.trim()
+    if (!value) {
+      setError('Enter email or entry number for Edit filter.')
+      return
+    }
+    setEditTarget({ filterBy: editFilterBy, value })
+  }
+
+  const applyDeleteFilter = () => {
+    setError('')
+    setDeleteResult('')
+    const value = deleteFilterValue.trim()
+    if (!value) {
+      setError('Enter email or entry number for Delete filter.')
+      return
+    }
+    setDeleteTarget({ filterBy: deleteFilterBy, value })
   }
 
   const handleUploadCsv = async () => {
@@ -121,35 +199,77 @@ export default function ManageEdit() {
         {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
         <div style={{ display: 'grid', gap: '1.5rem' }}>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Add manually (JSON)</h2>
-            <textarea
-              style={{ ...inputStyle, minHeight: 120 }}
-              placeholder='{"name":"...", ...}'
-              value={addData}
-              onChange={(e) => setAddData(e.target.value)}
-            />
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Add student</h2>
+            <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <input type="text" style={inputStyle} placeholder="Name" value={addName} onChange={(e) => setAddName(e.target.value)} />
+              <input type="email" style={inputStyle} placeholder="Email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} />
+              <input type="text" style={inputStyle} placeholder="Password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} />
+              <input type="text" style={inputStyle} placeholder="Entry number" value={addEntryNumber} onChange={(e) => setAddEntryNumber(e.target.value)} />
+              <input type="text" style={inputStyle} placeholder="Hostel name" value={addHostelName} onChange={(e) => setAddHostelName(e.target.value)} />
+            </div>
             <button type="button" style={primaryButton} onClick={handleAddManually} disabled={loading}>Add</button>
             {addResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{addResult}</pre>}
           </section>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Edit user (JSON)</h2>
-            <textarea
-              style={{ ...inputStyle, minHeight: 120 }}
-              placeholder='{"email":"...", ...}'
-              value={editData}
-              onChange={(e) => setEditData(e.target.value)}
-            />
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Edit student</h2>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <select
+                value={editFilterBy}
+                onChange={(e) => setEditFilterBy(e.target.value as 'email' | 'entry_number')}
+                style={{ ...inputStyle, maxWidth: 170 }}
+              >
+                <option value="email">Filter by email</option>
+                <option value="entry_number">Filter by entry number</option>
+              </select>
+              <input
+                type="text"
+                style={{ ...inputStyle, maxWidth: 280 }}
+                placeholder={editFilterBy === 'email' ? 'student@email.com' : 'Entry number'}
+                value={editFilterValue}
+                onChange={(e) => setEditFilterValue(e.target.value)}
+              />
+              <button type="button" style={secondaryButton} onClick={applyEditFilter} disabled={loading}>Filter</button>
+            </div>
+            {editTarget && (
+              <p style={{ color: '#9ca3af', marginBottom: '0.75rem' }}>
+                Selected student: {editTarget.filterBy} = {editTarget.value}
+              </p>
+            )}
+            <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <input type="text" style={inputStyle} placeholder="New name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <input type="email" style={inputStyle} placeholder="New email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+              <input type="text" style={inputStyle} placeholder="New password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} />
+              <input type="text" style={inputStyle} placeholder="New entry number" value={editEntryNumber} onChange={(e) => setEditEntryNumber(e.target.value)} />
+              <input type="text" style={inputStyle} placeholder="New hostel name" value={editHostelName} onChange={(e) => setEditHostelName(e.target.value)} />
+            </div>
             <button type="button" style={primaryButton} onClick={handleEditUser} disabled={loading}>Edit</button>
             {editResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{editResult}</pre>}
           </section>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Delete user (JSON)</h2>
-            <textarea
-              style={{ ...inputStyle, minHeight: 120 }}
-              placeholder='{"email":"..."}'
-              value={deleteData}
-              onChange={(e) => setDeleteData(e.target.value)}
-            />
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Delete student</h2>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <select
+                value={deleteFilterBy}
+                onChange={(e) => setDeleteFilterBy(e.target.value as 'email' | 'entry_number')}
+                style={{ ...inputStyle, maxWidth: 170 }}
+              >
+                <option value="email">Filter by email</option>
+                <option value="entry_number">Filter by entry number</option>
+              </select>
+              <input
+                type="text"
+                style={{ ...inputStyle, maxWidth: 280 }}
+                placeholder={deleteFilterBy === 'email' ? 'student@email.com' : 'Entry number'}
+                value={deleteFilterValue}
+                onChange={(e) => setDeleteFilterValue(e.target.value)}
+              />
+              <button type="button" style={secondaryButton} onClick={applyDeleteFilter} disabled={loading}>Filter</button>
+            </div>
+            {deleteTarget && (
+              <p style={{ color: '#9ca3af', marginBottom: '0.75rem' }}>
+                Selected student: {deleteTarget.filterBy} = {deleteTarget.value}
+              </p>
+            )}
             <button type="button" style={primaryButton} onClick={handleDeleteUser} disabled={loading}>Delete</button>
             {deleteResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{deleteResult}</pre>}
           </section>
