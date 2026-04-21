@@ -48,8 +48,13 @@ if(!JWT_SECRET){
 if(!MONGO_URL){
     throw new Error("MONGO_URL not present in .env")
 }
-mongoose.connect(MONGO_URL as string).catch((err) => {
-    console.log("Database connection failed", err);
+mongoose.connect(MONGO_URL as string)
+.then(() => {
+    console.log("Successfully connected to MongoDB");
+})
+.catch((err) => {
+    console.error("Database connection failed:", err.message);
+    process.exit(1); // Kill the Node server immediately if DB is unreachable
 });
 
 
