@@ -2,7 +2,7 @@ build and run all:
 
 docker run --name mongodb --network dep_network -d -p 27017:27017 -v ~/mongodb-data:/data/db mongo
 
-docker build -f Dockerfiles/node_backend.Dockerfile -t dep_node_backend .
+docker build -f Dockerfiles/node_backend.Dockerfile -t harsh42/dep_node_backend .
 docker run --name dep_node_backend --network dep_network -d -p 3000:3000 -e MONGO_URL="mongodb://mongodb:27017/DEP" harsh42/dep_node_backend 
 
 docker build -f Dockerfiles/sfu_server.Dockerfile -t harsh42/dep_sfu_server .
