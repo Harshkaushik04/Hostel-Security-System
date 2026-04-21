@@ -594,6 +594,35 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
     }
     else{
         const reqBody:CustomTypes.manageUsers.UploadManuallyRequestType=req.body
+        let token=req.headers.token;
+        if(!token){
+            return res.json({
+                error:"req.headers.token is null"
+            })
+        }
+        token = token as string;
+        const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload; //will always work because validated in authMiddleware
+        const host_email:string=decryptedData.email;
+        const host=await AdminModel.findOne({
+            email:host_email
+        })
+        if(!host){
+            return res.json({
+                error:"host user not in db"
+            })
+        }
+        if(host.privelege=="gaurd"){
+            return res.json({
+                error:"gaurd privelege cant add students"
+            })
+        }
+        else if(host.privelege=="top_privelege"){
+            if(reqBody.type=="admin" && reqBody.privelege=="super_user"){
+                return res.json({
+                    error:"top_privelege cant add super_user"
+                })
+            }
+        }
         const hashed_password = await bcrypt.hash(reqBody.password,5)
         if(reqBody.type=="student"){
             await UserModel.create({
@@ -609,9 +638,207 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
                 name:reqBody.name,
                 email:reqBody.email,
                 password:hashed_password,
-                privelege:reqBody.privelege
+                privelege:reqBody.privelege,
+                allocatedHostel:reqBody.allocatedHostel
             })
         }
+        return res.send({
+            approved:true
+        })
+    }
+})
+
+app.post("/edit",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.EditRequestSchema.safeParse(req.body);
+    if(!reqCheck){
+        const error="request schema wrong at server end"
+        console.log(error)
+        return res.json({
+            error:error
+        })
+    }
+    let token=req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload; //will always work because validated in authMiddleware
+    const host_email:string=decryptedData.email;
+    const host=await AdminModel.findOne({
+        email:host_email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege=="gaurd"){
+        return res.json({
+            error:"editing not allowed for gaurd privelege"
+        })
+    }
+    const reqBody:CustomTypes.manageUsers.EditRequestType=req.body;
+    if(reqBody.type=="admin"){
+        if(reqBody.filterBy!="email"){
+            return res.json({
+                error:"request filterby other than email"
+            })
+        }
+        let row=await AdminModel.findOne({
+            email:reqBody.value
+        })
+        if(!row){
+            return res.json({
+                error:"no user found"
+            })
+        }
+        /*
+        name:z.string(),
+        email:z.string(),
+        password:z.string(),
+        privelege:z.string(),
+        allocatedHostel:z.string()
+         */
+        if(host.privelege=="top_privelege"){
+            if(row.privelege=="top_privelege" || row.privelege=="super_user"){
+                return res.json({
+                    error:"top_prievelege cant edit other top_privelege and super_user"
+                })
+            }
+            if(reqBody.changed.privelege=="super_user"){
+                return res.json({
+                    error:"top_privelege cant make someone super_user"
+                })
+            }
+        }
+        row.email=reqBody.changed.email;
+        row.name=reqBody.changed.name;
+        row.password=reqBody.changed.password;
+        row.privelege=reqBody.changed.privelege;
+        row.allocatedHostel=reqBody.changed.allocatedHostel;
+        row.save()
+        return res.json({
+            approved:true
+        })       
+    }
+    else if(reqBody.type=="student"){
+        let row;
+        if(reqBody.filterBy=="email"){
+            row=await UserModel.findOne({
+                email:reqBody.value
+            })
+        }
+        else if(reqBody.filterBy=="entry_number"){
+            row=await UserModel.findOne({
+                entry_number:reqBody.value
+            })
+        }
+        else{
+            return res.json({
+                error:"filterBy cant be other than email or entry_number"
+            })
+        }
+        if(!row){
+            return res.json({
+                error:"no user found"
+            })
+        }
+        row.email=reqBody.changed.email;
+        row.name=reqBody.changed.name;
+        row.password=reqBody.changed.password;
+        row.entry_number=reqBody.changed.entry_number;
+        row.hostel_name=reqBody.changed.hostel_name;
+        row.save()
+        return res.json({
+            approved:true
+        })     
+    }
+    else{
+        return res.json({
+            error:"error: type is neither student nor admin"
+        })
+    }
+})
+
+app.post("delete",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.DeleteRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.manageUsers.DeleteRequestType=req.body
+        let token=req.headers.token;
+        if(!token){
+            return res.json({
+                error:"req.headers.token is null"
+            })
+        }
+        token = token as string;
+        const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload; //will always work because validated in authMiddleware
+        const host_email:string=decryptedData.email;
+        const host=await AdminModel.findOne({
+            email:host_email
+        })
+        if(!host){
+            return res.json({
+                error:"host user not in db"
+            })
+        }
+        if(host.privelege=="gaurd"){
+            return res.json({
+                error:"gaurd privelege cant delete students"
+            })
+        }
+        if(reqBody.type=="student"){
+            if(reqBody.filterBy=="email"){
+                await UserModel.deleteOne({
+                    email:reqBody.value
+                })
+                return res.json({
+                    approved:true
+                })
+            }
+            else if(reqBody.filterBy=="entry_number"){
+                await UserModel.deleteMany({
+                    entry_number:reqBody.value
+                })
+                return res.json({
+                    approved:true
+                })
+            }
+            else{
+                return res.json({
+                    error:"filterBy not permitted except by email or entry_number"
+                })
+            }
+        }
+        //admin delete
+        const row=await AdminModel.findOne({
+            email:reqBody.value
+        })
+        if(!row){
+            return res.json({
+                error:"user not found in db"
+            })
+        }
+        if(host.privelege=="top_privelege" && (row.privelege=="super_user" || row.privelege=="top_privelege")){
+            return res.json({
+                error:"top_privelege cant delete super_user or top_privelege"
+            })
+        }
+        if(host.privelege=="super_user" && row.privelege=="super_user"){
+            return res.json({
+                error:"super_user cant be deleted normally"
+            })
+        }
+        await AdminModel.deleteOne({
+            email:row.email
+        })
         return res.send({
             approved:true
         })

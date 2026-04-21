@@ -2,3 +2,4 @@
 2. sometimes i send error from backend to frontend, pls show that on frontend
 3. in /get-admin-users-list sending [doc.name,doc.email,doc.allocatedHostel] instead of [doc.name,doc.email]
 4. changed send-device-rtp-capabilities ws request schema sent from frontend to sfu server(Added allocatedHostel)
+5. added restrictions on /add-manually, added /edit,/delete endpoints in backend
