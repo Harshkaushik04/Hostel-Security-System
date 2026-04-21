@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@my-app/shared": "file:../shared",
+    "dotenv": "^17.4.2",
     "mediasoup-client": "^3.18.7",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",

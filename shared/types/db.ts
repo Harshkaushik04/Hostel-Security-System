@@ -10,13 +10,8 @@ export type AdminSchemaType={
     name:string,
     email:string,
     password:string,
-    privelege:string
-}
-
-export type InviteSchemaType={
-    host_email:string,
-    guest_name:string,
-    guest_contact_number:string
+    privelege:string,
+    allocatedHostel:string
 }
 
 export type EmergencySchemaType={
@@ -33,4 +28,8 @@ export type visitorsSchemaType={
     host_email:string,
     guest_name:string,
     guest_contact_number:string
+}
+
+export type hostelsSchemaType={
+    hostel_name:string
 }

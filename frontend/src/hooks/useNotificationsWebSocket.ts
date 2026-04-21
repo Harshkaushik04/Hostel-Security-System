@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
-const WS_URL = 'ws://localhost:3000'
+const WS_URL = `ws://${import.meta.env.VITE_BACKEND_IP}:3000`
 
 export function useNotificationsWebSocket() {
   const [messages, setMessages] = useState<unknown[]>([])

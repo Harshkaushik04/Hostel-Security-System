@@ -4,7 +4,7 @@ import { Request,Response,NextFunction } from "express"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import {z} from "zod"
 import jwt from "jsonwebtoken"
-import { UserModel,AdminModel,InviteModel,EmergencyModel,camerasModel,visitorsModel } from "./db.js"
+import { UserModel,AdminModel,EmergencyModel,CamerasModel,VisitorsModel,HostelsModel} from "./db.js"
 import bcrypt from "bcrypt"
 import dotenv from "dotenv"
 import path from "path"
@@ -66,15 +66,15 @@ app.post("/face-data",async (req:Request,res:Response)=>{
         const reqBody:CustomTypes.fastapi.faceDataType=req.body;
         const cameraName:string=reqBody.cameraName;
         const name:string=reqBody.name;
-        const cameraFound=await camerasModel.findOne({
+        const cameraFound=await CamerasModel.findOne({
             cameraName:cameraName
         })
         if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
         const user=await UserModel.findOne({
             name:name
         })
-        if(!user){
-            return res.status(401).json({error:'not permited'})
+        if((!user) || (user.hostel_name!=cameraFound.hostelName)){
+            return res.status(401).json({error:'not permitted'})
         }
         console.log(`${name} found`)
         const message=`${name} entered in ${cameraFound.hostelName}`
@@ -110,7 +110,7 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
         const host_email:string=reqBody.host_email;
         const guest_name:string=reqBody.guest_name;
         const guest_contact_number:string=reqBody.guest_contact_number;
-        const cameraFound=await camerasModel.findOne({
+        const cameraFound=await CamerasModel.findOne({
             cameraName:cameraName
         })
         if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
@@ -118,7 +118,7 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
         const host=await UserModel.findOne({
             email:host_email
         })
-        const visitor=await visitorsModel.findOne({
+        const visitor=await VisitorsModel.findOne({
             host_email:host_email,
             guest_name:guest_name,
             guest_contact_number:guest_contact_number
@@ -127,7 +127,7 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
             return res.send(401).json({error:'not permitted'})
         }
         console.log("[host and visitor found]")
-        await visitorsModel.deleteOne({
+        await VisitorsModel.deleteOne({
             host_email:host_email,
             guest_name:guest_name,
             guest_contact_number:guest_contact_number
@@ -507,7 +507,7 @@ app.post("/add-hostel",async (req:Request,res:Response)=>{
     }
     else{
         const reqBody:CustomTypes.manageUsers.AddHostelRequestType=req.body
-        const hostelRow=await UserModel.findOne({
+        const hostelRow=await HostelsModel.findOne({
             hostel_name:reqBody.hostel_name
         })
         if(hostelRow){
@@ -517,12 +517,8 @@ app.post("/add-hostel",async (req:Request,res:Response)=>{
             })
         }
         else{
-            await UserModel.create({
+            await HostelsModel.create({
                 hostel_name:reqBody.hostel_name,
-                name:process.env.NAME_SECRET,
-                entry_number:process.env.ENTRY_NUMBER_SECRET,
-                password:process.env.PASSWORD_SECRET,
-                email:process.env.EMAIL_SECRET
             })
             return res.send({
                 approved:true
@@ -532,12 +528,7 @@ app.post("/add-hostel",async (req:Request,res:Response)=>{
 })
 
 app.post("/get-hostels-list",async(req:Request,res:Response)=>{
-    const docs=await UserModel.find({
-        name:process.env.NAME_SECRET,
-        entry_number:process.env.ENTRY_NUMBER_SECRET,
-        password:process.env.PASSWORD_SECRET,
-        email:process.env.EMAIL_SECRET
-    })
+    const docs=await HostelsModel.find()
     let hostelsList:string[]=[]
     for(const doc of docs){
         hostelsList.push(doc.hostel_name)
@@ -562,9 +553,7 @@ app.post("/get-hostel-students-list",async (req:Request,res:Response)=>{
         }).skip(reqBody.start-1).limit(reqBody.num_students)
         let studentsList:string[][]=[]
         for(const doc of docs){
-            if(doc.name!=process.env.NAME_SECRET){
-                studentsList.push([doc.name,doc.entry_number,doc.email])
-            }
+            studentsList.push([doc.name,doc.entry_number,doc.email])
         }
         return res.json({
             studentsList:studentsList
@@ -587,9 +576,7 @@ app.post("/get-admin-users-list",async (req:Request,res:Response)=>{
         }).skip(reqBody.start-1).limit(reqBody.num_users)
         let usersList:string[][]=[]
         for(const doc of docs){
-            if(doc.name!=process.env.NAME_SECRET){
-                usersList.push([doc.name,doc.email])
-            }
+            usersList.push([doc.name,doc.email,doc.allocatedHostel])
         }
         return res.send({
             usersList:usersList
@@ -670,7 +657,7 @@ app.post('/invite', async (req: Request, res: Response) => {
         light: '#ffffff'
       }
     });
-    await visitorsModel.create({
+    await VisitorsModel.create({
         host_email:host_email,
         guest_name:inviteData.guest_name,
         guest_contact_number:inviteData.guest_contact_number

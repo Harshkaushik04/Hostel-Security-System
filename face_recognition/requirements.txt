@@ -1,5 +1,10 @@
 facenet-pytorch 
-opencv-python
+opencv-python-headless
 scikit-learn 
 pillow 
 numpy
+python-dotenv
+requests
+fastapi
+pyzbar
+uvicorn

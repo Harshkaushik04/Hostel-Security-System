@@ -50,7 +50,8 @@ export const transportRecvConnectToBackendSchema=z.object({
 
 export const sendDeviceRtpCapabilitiesToBackendSchema=z.object({
     type:z.literal("send-device-rtp-capabilities"),
-    rtpCapabilities:z.any()
+    rtpCapabilities:z.any(),
+    allocatedHostel:z.string()
 })
 
 export const consumerResumeToBackendSchema=z.object({
