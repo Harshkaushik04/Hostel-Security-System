@@ -4,29 +4,15 @@ import { invite, type InviteBody } from '../api/endpoints'
 import { layout, card, inputStyle, primaryButton, secondaryButton, backButton } from '../styles/common'
 import QRCode from 'qrcode'
 
-type KeyValue = { key: string; value: string }
-
 export default function VisitorEntry() {
   const navigate = useNavigate()
   const [hostEmail, setHostEmail] = useState('')
   const [guestName, setGuestName] = useState('')
   const [guestContact, setGuestContact] = useState('')
-  const [extraFields, setExtraFields] = useState<KeyValue[]>([{ key: '', value: '' }])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [inviteMessage, setInviteMessage] = useState('')
-
-  const addField = () => setExtraFields((prev) => [...prev, { key: '', value: '' }])
-  const updateField = (i: number, field: 'key' | 'value', val: string) => {
-    setExtraFields((prev) => {
-      const next = [...prev]
-      next[i] = { ...next[i], [field]: val }
-      return next
-    })
-  }
-  const removeField = (i: number) =>
-    setExtraFields((prev) => prev.filter((_, j) => j !== i))
 
   const downloadQr = () => {
     if (!qrDataUrl) return
@@ -48,9 +34,6 @@ export default function VisitorEntry() {
       guest_name: guestName,
       guest_contact_number: guestContact,
     }
-    extraFields.forEach(({ key, value }) => {
-      if (key.trim()) body[key.trim()] = value
-    })
     try {
       const result = await invite(body)
       if (!result?.approved) {
@@ -83,7 +66,7 @@ export default function VisitorEntry() {
           Visitor Entry
         </h1>
         <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
-          Invite a guest. Add optional key-value fields (e.g. WhatsApp contact).
+          Invite a guest by filling the required fields below.
         </p>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gap: '0.9rem', marginBottom: '1.5rem' }}>
@@ -120,30 +103,6 @@ export default function VisitorEntry() {
                 onChange={(e) => setGuestContact(e.target.value)}
               />
             </div>
-            {extraFields.map((f, i) => (
-              <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  placeholder="Key (e.g. WhatsApp contact)"
-                  style={{ ...inputStyle, flex: 1 }}
-                  value={f.key}
-                  onChange={(e) => updateField(i, 'key', e.target.value)}
-                />
-                <input
-                  type="text"
-                  placeholder="Value"
-                  style={{ ...inputStyle, flex: 1 }}
-                  value={f.value}
-                  onChange={(e) => updateField(i, 'value', e.target.value)}
-                />
-                <button type="button" style={secondaryButton} onClick={() => removeField(i)}>
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button type="button" style={secondaryButton} onClick={addField}>
-              Add key-value field
-            </button>
           </div>
           {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
           <button type="submit" style={primaryButton} disabled={loading}>

@@ -12,18 +12,13 @@ export default function LiveFeedLanding() {
           </Pressable>
         </Link>
 
-        <Text style={styles.title}>Live feed / recordings / activities</Text>
+        <Text style={styles.title}>Live feed / recordings</Text>
         <Text style={styles.subtitle}>Choose an option below.</Text>
 
         <View style={{ gap: 10 }}>
           <Link href="/admin/live-feed" asChild>
             <Pressable style={styles.buttonPrimary}>
               <Text style={styles.buttonTextPrimary}>Live feed</Text>
-            </Pressable>
-          </Link>
-          <Link href="/admin/activities" asChild>
-            <Pressable style={styles.buttonSecondary}>
-              <Text style={styles.buttonTextSecondary}>Activities</Text>
             </Pressable>
           </Link>
           <Link href="/admin/past-recordings" asChild>

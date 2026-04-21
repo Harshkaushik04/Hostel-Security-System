@@ -25,7 +25,7 @@ export default function AdminLanding() {
         <View style={{ gap: 10 }}>
           <Link href="/admin/live-feed-landing" asChild>
             <Pressable style={styles.buttonPrimary}>
-              <Text style={styles.buttonTextPrimary}>Live feed / recordings / activities</Text>
+              <Text style={styles.buttonTextPrimary}>Live feed / recordings</Text>
             </Pressable>
           </Link>
           <Link href="/admin/manage" asChild>

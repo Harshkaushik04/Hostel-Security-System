@@ -53,11 +53,6 @@ export default function LiveFeed() {
               <Text style={styles.buttonTextSecondary}>View notifications</Text>
             </Pressable>
           </Link>
-          <Link href="/admin/activities" asChild>
-            <Pressable style={styles.buttonSecondary}>
-              <Text style={styles.buttonTextSecondary}>View activities</Text>
-            </Pressable>
-          </Link>
           <Link href="/admin/past-recordings" asChild>
             <Pressable style={styles.buttonSecondary}>
               <Text style={styles.buttonTextSecondary}>View past recordings</Text>

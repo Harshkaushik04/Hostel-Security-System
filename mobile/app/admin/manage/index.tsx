@@ -251,7 +251,7 @@ export default function ManageList() {
                   <Text style={styles.buttonTextSecondary}>
                     {selectedHostel
                       ? `${u[0] ?? ''} (${u[1] ?? ''}) — ${u[2] ?? ''}`
-                      : `${u[0] ?? ''} — ${u[1] ?? ''}`}
+                      : `${u[0] ?? ''} — ${u[1] ?? ''}${u[2] ? ` — ${u[2]}` : ''}`}
                   </Text>
                   <Link href="/admin/manage/edit" asChild>
                     <Pressable>
