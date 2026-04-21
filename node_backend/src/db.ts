@@ -21,13 +21,8 @@ const admin=new mongoose.Schema<CustomTypes.db.AdminSchemaType>({
     name:String,
     email:String,
     password:String,
-    privelege:String
-})
-
-const invites=new mongoose.Schema<CustomTypes.db.InviteSchemaType>({
-    host_email:String,
-    guest_name:String,
-    guest_contact_number:String
+    privelege:String,
+    allocatedHostel:String
 })
 
 const emergencies=new mongoose.Schema<CustomTypes.db.EmergencySchemaType>({
@@ -49,9 +44,13 @@ const visitors= new mongoose.Schema<CustomTypes.db.visitorsSchemaType>({
     guest_contact_number:String
 })
 
+const hostels= new mongoose.Schema<CustomTypes.db.hostelsSchemaType>({
+    hostel_name:String
+})
+
 export const UserModel=mongoose.model("users",users)
 export const AdminModel=mongoose.model("admin",admin)
-export const InviteModel=mongoose.model("invites",invites)
 export const EmergencyModel=mongoose.model("emergencies",emergencies)
-export const camerasModel=mongoose.model("cameras",cameras)
-export const visitorsModel=mongoose.model("visitors",visitors)
+export const CamerasModel=mongoose.model("cameras",cameras)
+export const VisitorsModel=mongoose.model("visitors",visitors)
+export const HostelsModel=mongoose.model("hostels",hostels)
