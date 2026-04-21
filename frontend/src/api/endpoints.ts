@@ -79,9 +79,15 @@ export async function addHostel(body: AddHostelBody) {
   return apiFetch<unknown>('/add-hostel', { method: 'POST', json: body })
 }
 
-// Manage: add/delete/edit (upload)
-export async function uploadManually(body: Record<string, unknown>) {
-  return apiFetch<unknown>('/upload-manually', { method: 'POST', json: body })
+// Manage: add/delete/edit users
+export async function addManually(body: Record<string, unknown>) {
+  return apiFetch<unknown>('/add-manually', { method: 'POST', json: body })
+}
+export async function editUser(body: Record<string, unknown>) {
+  return apiFetch<unknown>('/edit', { method: 'POST', json: body })
+}
+export async function deleteUser(body: Record<string, unknown>) {
+  return apiFetch<unknown>('/delete', { method: 'POST', json: body })
 }
 export async function uploadCsv(body: FormData) {
   const API_BASE = `http://${import.meta.env.VITE_BACKEND_IP}:3000`

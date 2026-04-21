@@ -42,6 +42,7 @@ export default function LiveFeed() {
   const deviceRef = useRef<Device | null>(null)
   const recvTransportRef = useRef<any>(null)
   const videoRefsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
+  const tileRefsRef = useRef<Map<string, HTMLDivElement>>(new Map())
   const deviceLoadedRef = useRef(false)
 
   useEffect(() => {
@@ -240,6 +241,19 @@ export default function LiveFeed() {
     setFullscreenId((prev) => (prev === id ? null : id))
   }
 
+  const openNativeFullscreen = async (id: string) => {
+    const tile = tileRefsRef.current.get(id)
+    if (!tile) return
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      }
+      await tile.requestFullscreen()
+    } catch {
+      setError('Fullscreen is blocked by browser settings.')
+    }
+  }
+
   const applyFocusCamera = () => {
     setFocusHint('')
     const n = parseInt(focusCameraInput.trim(), 10)
@@ -395,6 +409,10 @@ export default function LiveFeed() {
                 role="button"
                 tabIndex={0}
                 onDoubleClick={() => toggleFullscreen(item.id)}
+                ref={(el) => {
+                  if (el) tileRefsRef.current.set(item.id, el)
+                  else tileRefsRef.current.delete(item.id)
+                }}
                 style={{
                   position: 'relative',
                   aspectRatio: '16/9',
@@ -432,6 +450,29 @@ export default function LiveFeed() {
                 >
                   {item.label} — double-click fullscreen
                 </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openNativeFullscreen(item.id)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    bottom: 8,
+                    background: 'rgba(0,0,0,0.72)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    borderRadius: 6,
+                    padding: '4px 8px',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                  }}
+                  aria-label={`Open ${item.label} in full-screen mode`}
+                  title="Open true full-screen"
+                >
+                  Full screen
+                </button>
               </div>
             )
           })}

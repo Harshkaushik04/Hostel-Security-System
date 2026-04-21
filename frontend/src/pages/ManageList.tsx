@@ -208,7 +208,7 @@ export default function ManageList() {
                       <span style={{ flex: 1 }}>
                         {selectedHostel
                           ? `${u[0] ?? ''} (${u[1] ?? ''}) — ${u[2] ?? ''}`
-                          : `${u[0] ?? ''} — ${u[1] ?? ''}`}
+                          : `${u[0] ?? ''} — ${u[1] ?? ''}${u[2] ? ` — ${u[2]}` : ''}`}
                       </span>
                       <Link to="/admin/manage/edit" style={{ ...secondaryButton, textDecoration: 'none' }}>Edit</Link>
                     </li>
