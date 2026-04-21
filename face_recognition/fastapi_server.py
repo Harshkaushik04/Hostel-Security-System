@@ -13,9 +13,13 @@ from fastapi import FastAPI
 from facenet_pytorch import InceptionResnetV1, MTCNN
 from pyzbar.pyzbar import decode
 import uvicorn
+from dotenv import load_dotenv
+
+load_dotenv(".env")
 
 app = FastAPI()
-
+# Limit PyTorch to 2 or 4 threads so it doesn't overload the VM's CPU cores
+# torch.set_num_threads(2)
 # --- 1. Hardware & Models ---
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Loading models on {device}...")
@@ -39,8 +43,8 @@ face_cache = {}
 qr_cache = {}
 CACHE_TTL = 10.0  
 
-NODE_BACKEND_URL = "http://localhost:3000"
-MEDIAMTX_API_URL = "http://localhost:9997/v3/paths/list"
+NODE_BACKEND_URL = f"http://{os.getenv('NODE_BACKEND_IP')}:3000"
+MEDIAMTX_API_URL = F"http://{os.getenv('MEDIAMTX_IP')}:9997/v3/paths/list"
 
 # --- 3. Helper Functions ---
 def is_valid_camera(name: str) -> bool:
@@ -96,7 +100,7 @@ def send_qr_to_node(payload_str: str, camera_name: str):
 
 # --- 4. The Video Processing Worker ---
 def process_stream(camera_name: str, stop_event: threading.Event):
-    rtsp_url = f"rtsp://localhost:8554/{camera_name}"
+    rtsp_url = f"rtsp://{os.getenv('MEDIAMTX_IP')}:8554/{camera_name}"
     print(f"[STREAM] Starting processing for {camera_name}")
     
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
