@@ -73,8 +73,8 @@ app.post("/face-data",async (req:Request,res:Response)=>{
         const user=await UserModel.findOne({
             name:name
         })
-        if(!user){
-            return res.status(401).json({error:'not permited'})
+        if((!user) || (user.hostel_name!=cameraFound.hostelName)){
+            return res.status(401).json({error:'not permitted'})
         }
         console.log(`${name} found`)
         const message=`${name} entered in ${cameraFound.hostelName}`
