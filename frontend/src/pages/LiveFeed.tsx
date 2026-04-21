@@ -24,6 +24,7 @@ function clampCameraSlots(n: number): number {
 
 export default function LiveFeed() {
   const [view, setView] = useState<ViewFilter>('all')
+  const viewRef = useRef<ViewFilter>('all')
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
   
@@ -46,6 +47,10 @@ export default function LiveFeed() {
   useEffect(() => {
     maxCameraSlotsRef.current = maxCameraSlots
   }, [maxCameraSlots])
+
+  useEffect(() => {
+    viewRef.current = view
+  }, [view])
 
   /** If user reduces slots below the currently focused camera, exit focus. */
   useEffect(() => {
@@ -144,6 +149,7 @@ export default function LiveFeed() {
           const send_message: CustomTypes.sfu.sendDeviceRtpCapabilitiesToBackendType = {
             type: 'send-device-rtp-capabilities',
             rtpCapabilities: device.recvRtpCapabilities,
+            allocatedHostel: viewRef.current,
           }
           ws.send(JSON.stringify(send_message))
         } else if (json_message.type === 'invitation-to-consume') {
@@ -368,7 +374,6 @@ export default function LiveFeed() {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <Link to="/admin/notifications" style={{ ...secondaryButton, textDecoration: 'none' }}>View notifications</Link>
-          <Link to="/admin/activities" style={{ ...secondaryButton, textDecoration: 'none' }}>View activities</Link>
           <Link to="/admin/past-recordings" style={{ ...secondaryButton, textDecoration: 'none' }}>View past recordings</Link>
         </div>
 
@@ -377,7 +382,7 @@ export default function LiveFeed() {
             display: 'grid',
             gridTemplateColumns: fullscreenId
               ? '1fr'
-              : 'repeat(auto-fill, minmax(200px, 1fr))',
+              : 'repeat(auto-fill, minmax(400px, 1fr))',
             gap: '1rem',
           }}
         >

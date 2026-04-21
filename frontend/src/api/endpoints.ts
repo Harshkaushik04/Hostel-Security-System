@@ -37,18 +37,6 @@ export async function fetchEmergencies() {
   return apiFetch<unknown>('/emergencies', { method: 'GET' })
 }
 
-// Activities
-export type DateRangeBody = { start?: string; end?: string; [key: string]: string | undefined }
-export async function fetchRecentActivities(params: DateRangeBody) {
-  return apiFetch<unknown>('/fetch-recent-activities', { method: 'POST', json: params })
-}
-export async function fetchTimerangeActivities(params: DateRangeBody) {
-  return apiFetch<unknown>('/fetch-timerange-activities', { method: 'POST', json: params })
-}
-export async function getActivity(params: Record<string, string>) {
-  return apiFetch<unknown>('/get-activity', { method: 'POST', json: params })
-}
-
 // Past recordings
 export async function getPastRecording(params: Record<string, string>) {
   return apiFetch<unknown>('/get-past-recording', { method: 'POST', json: params })

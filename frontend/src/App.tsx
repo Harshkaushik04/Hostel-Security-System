@@ -9,8 +9,6 @@ import {
   AdminEmergencies,
   LiveFeedLanding,
   LiveFeed,
-  ActivitiesLanding,
-  ActivityPlayer,
   PastRecordingsLanding,
   PastRecordingPlayer,
   ManageList,
@@ -33,8 +31,6 @@ function App() {
         <Route path="/admin/emergencies" element={<AdminEmergencies />} />
         <Route path="/admin/live-feed-landing" element={<LiveFeedLanding />} />
         <Route path="/admin/live-feed" element={<LiveFeed />} />
-        <Route path="/admin/activities" element={<ActivitiesLanding />} />
-        <Route path="/admin/activities/:activityId" element={<ActivityPlayer />} />
         <Route path="/admin/past-recordings" element={<PastRecordingsLanding />} />
         <Route path="/admin/past-recordings/:recordingId" element={<PastRecordingPlayer />} />
         <Route path="/admin/manage" element={<ManageList />} />

@@ -23,7 +23,7 @@ export default function AdminLanding() {
             <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.75rem' }}>Choose an option below.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '320px' }}>
               <Link to="/admin/live-feed-landing" style={linkStyle}>
-                Live feed, past recordings & activities
+                Live feed & past recordings
               </Link>
               <Link to="/admin/manage" style={secLinkStyle}>
                 Manage students / admin list
