@@ -11,6 +11,7 @@ import type { streamDetailsType } from '../../shared/types/sfu.js';
 import axios from 'axios';
 import "dotenv/config"
 import type { CursorPos } from 'readline';
+import { CamerasModel } from './db.js';
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -345,7 +346,21 @@ async function run() {
                         return;
                     }
                     const rtpCapabilities:mediasoup.types.RtpCapabilities=json_message.rtpCapabilities;
+                    const allocatedHostel:string=json_message.allocatedHostel
+                    let cameras=await CamerasModel.find({
+                        hostelName:allocatedHostel
+                    })
                     for(const [cameraName,streamDetails] of streamRegistry){
+                        let flag=false;
+                        if(allocatedHostel!="all"){
+                            for(let cameraRow of cameras){
+                                if(cameraRow.cameraName==cameraName){
+                                    flag=true;
+                                    break;
+                                }
+                            }
+                            if(!flag) continue;
+                        }
                         const {ffmpeg,
                             producer,
                             plainTransport,
