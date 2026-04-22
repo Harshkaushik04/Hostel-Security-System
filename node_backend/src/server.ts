@@ -112,16 +112,18 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
         console.log("[reqcheck-success]")
         const reqBody:CustomTypes.fastapi.qrDataType=req.body;
         const cameraName:string=reqBody.cameraName;
-        const host_email:string=reqBody.host_email;
-        const guest_name:string=reqBody.guest_name;
-        const guest_contact_number:string=reqBody.guest_contact_number;
+        const qr_data:CustomTypes.fastapi.internalQrDataType=reqBody.qr_data;
+        const host_email:string=qr_data.host_email;
+        const guest_name:string=qr_data.guest_name;
+        const guest_contact_number:string=qr_data.guest_contact_number;
         const cameraFound=await CamerasModel.findOne({
             cameraName:cameraName
         })
         if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
         console.log("[camera-found]")
         const host=await UserModel.findOne({
-            email:host_email
+            email:host_email,
+            hostel_name:cameraFound.hostelName
         })
         const visitor=await VisitorsModel.findOne({
             host_email:host_email,
@@ -871,12 +873,15 @@ app.post('/invite', async (req: Request, res: Response) => {
         email:host_email
     })
     if(!found){
-        res.json({
+        return res.json({
             error:"host is unregistered"
         })
     }
+
     const qrPayload = {
       ...inviteData,
+      host_email:host_email,
+      hostel_name:found.hostel_name,
       invite_id: crypto.randomUUID(), 
       created_at: new Date().toISOString()
     };
@@ -891,6 +896,7 @@ app.post('/invite', async (req: Request, res: Response) => {
     });
     await VisitorsModel.create({
         host_email:host_email,
+        hostel_name:found.hostel_name,
         guest_name:inviteData.guest_name,
         guest_contact_number:inviteData.guest_contact_number
     })
