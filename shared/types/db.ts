@@ -25,6 +25,7 @@ export type camerasSchemaType={
 }
 
 export type visitorsSchemaType={
+    hostel_name:string,
     host_email:string,
     guest_name:string,
     guest_contact_number:string
