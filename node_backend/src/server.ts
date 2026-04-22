@@ -4,7 +4,7 @@ import { Request,Response,NextFunction } from "express"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import {z} from "zod"
 import jwt from "jsonwebtoken"
-import { UserModel,AdminModel,InviteModel,EmergencyModel,camerasModel,visitorsModel } from "./db.js"
+import { UserModel,AdminModel,EmergencyModel,CamerasModel,VisitorsModel,HostelsModel} from "./db.js"
 import bcrypt from "bcrypt"
 import dotenv from "dotenv"
 import path from "path"
@@ -48,8 +48,13 @@ if(!JWT_SECRET){
 if(!MONGO_URL){
     throw new Error("MONGO_URL not present in .env")
 }
-mongoose.connect(MONGO_URL as string).catch((err) => {
-    console.log("Database connection failed", err);
+mongoose.connect(MONGO_URL as string)
+.then(() => {
+    console.log("Successfully connected to MongoDB");
+})
+.catch((err) => {
+    console.error("Database connection failed:", err.message);
+    process.exit(1); // Kill the Node server immediately if DB is unreachable
 });
 
 
@@ -66,15 +71,15 @@ app.post("/face-data",async (req:Request,res:Response)=>{
         const reqBody:CustomTypes.fastapi.faceDataType=req.body;
         const cameraName:string=reqBody.cameraName;
         const name:string=reqBody.name;
-        const cameraFound=await camerasModel.findOne({
+        const cameraFound=await CamerasModel.findOne({
             cameraName:cameraName
         })
         if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
         const user=await UserModel.findOne({
             name:name
         })
-        if(!user){
-            return res.status(401).json({error:'not permited'})
+        if((!user) || (user.hostel_name!=cameraFound.hostelName)){
+            return res.status(401).json({error:'not permitted'})
         }
         console.log(`${name} found`)
         const message=`${name} entered in ${cameraFound.hostelName}`
@@ -107,18 +112,20 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
         console.log("[reqcheck-success]")
         const reqBody:CustomTypes.fastapi.qrDataType=req.body;
         const cameraName:string=reqBody.cameraName;
-        const host_email:string=reqBody.host_email;
-        const guest_name:string=reqBody.guest_name;
-        const guest_contact_number:string=reqBody.guest_contact_number;
-        const cameraFound=await camerasModel.findOne({
+        const qr_data:CustomTypes.fastapi.internalQrDataType=reqBody.qr_data;
+        const host_email:string=qr_data.host_email;
+        const guest_name:string=qr_data.guest_name;
+        const guest_contact_number:string=qr_data.guest_contact_number;
+        const cameraFound=await CamerasModel.findOne({
             cameraName:cameraName
         })
         if(!cameraFound) return res.status(401).json({ error: 'camera not found'})
         console.log("[camera-found]")
         const host=await UserModel.findOne({
-            email:host_email
+            email:host_email,
+            hostel_name:cameraFound.hostelName
         })
-        const visitor=await visitorsModel.findOne({
+        const visitor=await VisitorsModel.findOne({
             host_email:host_email,
             guest_name:guest_name,
             guest_contact_number:guest_contact_number
@@ -127,7 +134,7 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
             return res.send(401).json({error:'not permitted'})
         }
         console.log("[host and visitor found]")
-        await visitorsModel.deleteOne({
+        await VisitorsModel.deleteOne({
             host_email:host_email,
             guest_name:guest_name,
             guest_contact_number:guest_contact_number
@@ -507,7 +514,7 @@ app.post("/add-hostel",async (req:Request,res:Response)=>{
     }
     else{
         const reqBody:CustomTypes.manageUsers.AddHostelRequestType=req.body
-        const hostelRow=await UserModel.findOne({
+        const hostelRow=await HostelsModel.findOne({
             hostel_name:reqBody.hostel_name
         })
         if(hostelRow){
@@ -517,12 +524,8 @@ app.post("/add-hostel",async (req:Request,res:Response)=>{
             })
         }
         else{
-            await UserModel.create({
+            await HostelsModel.create({
                 hostel_name:reqBody.hostel_name,
-                name:process.env.NAME_SECRET,
-                entry_number:process.env.ENTRY_NUMBER_SECRET,
-                password:process.env.PASSWORD_SECRET,
-                email:process.env.EMAIL_SECRET
             })
             return res.send({
                 approved:true
@@ -532,12 +535,7 @@ app.post("/add-hostel",async (req:Request,res:Response)=>{
 })
 
 app.post("/get-hostels-list",async(req:Request,res:Response)=>{
-    const docs=await UserModel.find({
-        name:process.env.NAME_SECRET,
-        entry_number:process.env.ENTRY_NUMBER_SECRET,
-        password:process.env.PASSWORD_SECRET,
-        email:process.env.EMAIL_SECRET
-    })
+    const docs=await HostelsModel.find()
     let hostelsList:string[]=[]
     for(const doc of docs){
         hostelsList.push(doc.hostel_name)
@@ -562,9 +560,7 @@ app.post("/get-hostel-students-list",async (req:Request,res:Response)=>{
         }).skip(reqBody.start-1).limit(reqBody.num_students)
         let studentsList:string[][]=[]
         for(const doc of docs){
-            if(doc.name!=process.env.NAME_SECRET){
-                studentsList.push([doc.name,doc.entry_number,doc.email])
-            }
+            studentsList.push([doc.name,doc.entry_number,doc.email])
         }
         return res.json({
             studentsList:studentsList
@@ -587,9 +583,7 @@ app.post("/get-admin-users-list",async (req:Request,res:Response)=>{
         }).skip(reqBody.start-1).limit(reqBody.num_users)
         let usersList:string[][]=[]
         for(const doc of docs){
-            if(doc.name!=process.env.NAME_SECRET){
-                usersList.push([doc.name,doc.email])
-            }
+            usersList.push([doc.name,doc.email,doc.allocatedHostel])
         }
         return res.send({
             usersList:usersList
@@ -607,6 +601,35 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
     }
     else{
         const reqBody:CustomTypes.manageUsers.UploadManuallyRequestType=req.body
+        let token=req.headers.token;
+        if(!token){
+            return res.json({
+                error:"req.headers.token is null"
+            })
+        }
+        token = token as string;
+        const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload; //will always work because validated in authMiddleware
+        const host_email:string=decryptedData.email;
+        const host=await AdminModel.findOne({
+            email:host_email
+        })
+        if(!host){
+            return res.json({
+                error:"host user not in db"
+            })
+        }
+        if(host.privelege=="gaurd"){
+            return res.json({
+                error:"gaurd privelege cant add students"
+            })
+        }
+        else if(host.privelege=="top_privelege"){
+            if(reqBody.type=="admin" && reqBody.privelege=="super_user"){
+                return res.json({
+                    error:"top_privelege cant add super_user"
+                })
+            }
+        }
         const hashed_password = await bcrypt.hash(reqBody.password,5)
         if(reqBody.type=="student"){
             await UserModel.create({
@@ -622,9 +645,207 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
                 name:reqBody.name,
                 email:reqBody.email,
                 password:hashed_password,
-                privelege:reqBody.privelege
+                privelege:reqBody.privelege,
+                allocatedHostel:reqBody.allocatedHostel
             })
         }
+        return res.send({
+            approved:true
+        })
+    }
+})
+
+app.post("/edit",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.EditRequestSchema.safeParse(req.body);
+    if(!reqCheck){
+        const error="request schema wrong at server end"
+        console.log(error)
+        return res.json({
+            error:error
+        })
+    }
+    let token=req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload; //will always work because validated in authMiddleware
+    const host_email:string=decryptedData.email;
+    const host=await AdminModel.findOne({
+        email:host_email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege=="gaurd"){
+        return res.json({
+            error:"editing not allowed for gaurd privelege"
+        })
+    }
+    const reqBody:CustomTypes.manageUsers.EditRequestType=req.body;
+    if(reqBody.type=="admin"){
+        if(reqBody.filterBy!="email"){
+            return res.json({
+                error:"request filterby other than email"
+            })
+        }
+        let row=await AdminModel.findOne({
+            email:reqBody.value
+        })
+        if(!row){
+            return res.json({
+                error:"no user found"
+            })
+        }
+        /*
+        name:z.string(),
+        email:z.string(),
+        password:z.string(),
+        privelege:z.string(),
+        allocatedHostel:z.string()
+         */
+        if(host.privelege=="top_privelege"){
+            if(row.privelege=="top_privelege" || row.privelege=="super_user"){
+                return res.json({
+                    error:"top_prievelege cant edit other top_privelege and super_user"
+                })
+            }
+            if(reqBody.changed.privelege=="super_user"){
+                return res.json({
+                    error:"top_privelege cant make someone super_user"
+                })
+            }
+        }
+        row.email=reqBody.changed.email;
+        row.name=reqBody.changed.name;
+        row.password=reqBody.changed.password;
+        row.privelege=reqBody.changed.privelege;
+        row.allocatedHostel=reqBody.changed.allocatedHostel;
+        row.save()
+        return res.json({
+            approved:true
+        })       
+    }
+    else if(reqBody.type=="student"){
+        let row;
+        if(reqBody.filterBy=="email"){
+            row=await UserModel.findOne({
+                email:reqBody.value
+            })
+        }
+        else if(reqBody.filterBy=="entry_number"){
+            row=await UserModel.findOne({
+                entry_number:reqBody.value
+            })
+        }
+        else{
+            return res.json({
+                error:"filterBy cant be other than email or entry_number"
+            })
+        }
+        if(!row){
+            return res.json({
+                error:"no user found"
+            })
+        }
+        row.email=reqBody.changed.email;
+        row.name=reqBody.changed.name;
+        row.password=reqBody.changed.password;
+        row.entry_number=reqBody.changed.entry_number;
+        row.hostel_name=reqBody.changed.hostel_name;
+        row.save()
+        return res.json({
+            approved:true
+        })     
+    }
+    else{
+        return res.json({
+            error:"error: type is neither student nor admin"
+        })
+    }
+})
+
+app.post("delete",async (req:Request,res:Response)=>{
+    const reqCheck = CustomSchemas.manageUsers.DeleteRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema wrong\n${reqCheck.error}`
+        })
+    }
+    else{
+        const reqBody:CustomTypes.manageUsers.DeleteRequestType=req.body
+        let token=req.headers.token;
+        if(!token){
+            return res.json({
+                error:"req.headers.token is null"
+            })
+        }
+        token = token as string;
+        const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload; //will always work because validated in authMiddleware
+        const host_email:string=decryptedData.email;
+        const host=await AdminModel.findOne({
+            email:host_email
+        })
+        if(!host){
+            return res.json({
+                error:"host user not in db"
+            })
+        }
+        if(host.privelege=="gaurd"){
+            return res.json({
+                error:"gaurd privelege cant delete students"
+            })
+        }
+        if(reqBody.type=="student"){
+            if(reqBody.filterBy=="email"){
+                await UserModel.deleteOne({
+                    email:reqBody.value
+                })
+                return res.json({
+                    approved:true
+                })
+            }
+            else if(reqBody.filterBy=="entry_number"){
+                await UserModel.deleteMany({
+                    entry_number:reqBody.value
+                })
+                return res.json({
+                    approved:true
+                })
+            }
+            else{
+                return res.json({
+                    error:"filterBy not permitted except by email or entry_number"
+                })
+            }
+        }
+        //admin delete
+        const row=await AdminModel.findOne({
+            email:reqBody.value
+        })
+        if(!row){
+            return res.json({
+                error:"user not found in db"
+            })
+        }
+        if(host.privelege=="top_privelege" && (row.privelege=="super_user" || row.privelege=="top_privelege")){
+            return res.json({
+                error:"top_privelege cant delete super_user or top_privelege"
+            })
+        }
+        if(host.privelege=="super_user" && row.privelege=="super_user"){
+            return res.json({
+                error:"super_user cant be deleted normally"
+            })
+        }
+        await AdminModel.deleteOne({
+            email:row.email
+        })
         return res.send({
             approved:true
         })
@@ -652,12 +873,15 @@ app.post('/invite', async (req: Request, res: Response) => {
         email:host_email
     })
     if(!found){
-        res.json({
+        return res.json({
             error:"host is unregistered"
         })
     }
+
     const qrPayload = {
       ...inviteData,
+      host_email:host_email,
+      hostel_name:found.hostel_name,
       invite_id: crypto.randomUUID(), 
       created_at: new Date().toISOString()
     };
@@ -670,8 +894,9 @@ app.post('/invite', async (req: Request, res: Response) => {
         light: '#ffffff'
       }
     });
-    await visitorsModel.create({
+    await VisitorsModel.create({
         host_email:host_email,
+        hostel_name:found.hostel_name,
         guest_name:inviteData.guest_name,
         guest_contact_number:inviteData.guest_contact_number
     })

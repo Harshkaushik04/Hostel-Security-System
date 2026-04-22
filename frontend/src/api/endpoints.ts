@@ -37,18 +37,6 @@ export async function fetchEmergencies() {
   return apiFetch<unknown>('/emergencies', { method: 'GET' })
 }
 
-// Activities
-export type DateRangeBody = { start?: string; end?: string; [key: string]: string | undefined }
-export async function fetchRecentActivities(params: DateRangeBody) {
-  return apiFetch<unknown>('/fetch-recent-activities', { method: 'POST', json: params })
-}
-export async function fetchTimerangeActivities(params: DateRangeBody) {
-  return apiFetch<unknown>('/fetch-timerange-activities', { method: 'POST', json: params })
-}
-export async function getActivity(params: Record<string, string>) {
-  return apiFetch<unknown>('/get-activity', { method: 'POST', json: params })
-}
-
 // Past recordings
 export async function getPastRecording(params: Record<string, string>) {
   return apiFetch<unknown>('/get-past-recording', { method: 'POST', json: params })
@@ -91,12 +79,18 @@ export async function addHostel(body: AddHostelBody) {
   return apiFetch<unknown>('/add-hostel', { method: 'POST', json: body })
 }
 
-// Manage: add/delete/edit (upload)
-export async function uploadManually(body: Record<string, unknown>) {
+// Manage: add/delete/edit users
+export async function addManually(body: Record<string, unknown>) {
   return apiFetch<unknown>('/upload-manually', { method: 'POST', json: body })
 }
+export async function editUser(body: Record<string, unknown>) {
+  return apiFetch<unknown>('/edit', { method: 'POST', json: body })
+}
+export async function deleteUser(body: Record<string, unknown>) {
+  return apiFetch<unknown>('/delete', { method: 'POST', json: body })
+}
 export async function uploadCsv(body: FormData) {
-  const API_BASE = 'http://localhost:3000'
+  const API_BASE = `http://${import.meta.env.VITE_BACKEND_IP}:3000`
   const res = await fetch(`${API_BASE}/upload-csv`, {
     method: 'POST',
     body,

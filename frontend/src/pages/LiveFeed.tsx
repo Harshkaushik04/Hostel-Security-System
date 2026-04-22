@@ -24,6 +24,7 @@ function clampCameraSlots(n: number): number {
 
 export default function LiveFeed() {
   const [view, setView] = useState<ViewFilter>('all')
+  const viewRef = useRef<ViewFilter>('all')
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
   
@@ -41,11 +42,16 @@ export default function LiveFeed() {
   const deviceRef = useRef<Device | null>(null)
   const recvTransportRef = useRef<any>(null)
   const videoRefsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
+  const tileRefsRef = useRef<Map<string, HTMLDivElement>>(new Map())
   const deviceLoadedRef = useRef(false)
 
   useEffect(() => {
     maxCameraSlotsRef.current = maxCameraSlots
   }, [maxCameraSlots])
+
+  useEffect(() => {
+    viewRef.current = view
+  }, [view])
 
   /** If user reduces slots below the currently focused camera, exit focus. */
   useEffect(() => {
@@ -144,6 +150,7 @@ export default function LiveFeed() {
           const send_message: CustomTypes.sfu.sendDeviceRtpCapabilitiesToBackendType = {
             type: 'send-device-rtp-capabilities',
             rtpCapabilities: device.recvRtpCapabilities,
+            allocatedHostel: viewRef.current,
           }
           ws.send(JSON.stringify(send_message))
         } else if (json_message.type === 'invitation-to-consume') {
@@ -232,6 +239,19 @@ export default function LiveFeed() {
 
   const toggleFullscreen = (id: string) => {
     setFullscreenId((prev) => (prev === id ? null : id))
+  }
+
+  const openNativeFullscreen = async (id: string) => {
+    const tile = tileRefsRef.current.get(id)
+    if (!tile) return
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      }
+      await tile.requestFullscreen()
+    } catch {
+      setError('Fullscreen is blocked by browser settings.')
+    }
   }
 
   const applyFocusCamera = () => {
@@ -368,7 +388,6 @@ export default function LiveFeed() {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <Link to="/admin/notifications" style={{ ...secondaryButton, textDecoration: 'none' }}>View notifications</Link>
-          <Link to="/admin/activities" style={{ ...secondaryButton, textDecoration: 'none' }}>View activities</Link>
           <Link to="/admin/past-recordings" style={{ ...secondaryButton, textDecoration: 'none' }}>View past recordings</Link>
         </div>
 
@@ -377,7 +396,7 @@ export default function LiveFeed() {
             display: 'grid',
             gridTemplateColumns: fullscreenId
               ? '1fr'
-              : 'repeat(auto-fill, minmax(200px, 1fr))',
+              : 'repeat(auto-fill, minmax(400px, 1fr))',
             gap: '1rem',
           }}
         >
@@ -390,6 +409,10 @@ export default function LiveFeed() {
                 role="button"
                 tabIndex={0}
                 onDoubleClick={() => toggleFullscreen(item.id)}
+                ref={(el) => {
+                  if (el) tileRefsRef.current.set(item.id, el)
+                  else tileRefsRef.current.delete(item.id)
+                }}
                 style={{
                   position: 'relative',
                   aspectRatio: '16/9',
@@ -427,6 +450,29 @@ export default function LiveFeed() {
                 >
                   {item.label} — double-click fullscreen
                 </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openNativeFullscreen(item.id)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    bottom: 8,
+                    background: 'rgba(0,0,0,0.72)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    borderRadius: 6,
+                    padding: '4px 8px',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                  }}
+                  aria-label={`Open ${item.label} in full-screen mode`}
+                  title="Open true full-screen"
+                >
+                  Full screen
+                </button>
               </div>
             )
           })}

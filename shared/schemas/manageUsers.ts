@@ -1,4 +1,5 @@
 import {z} from "zod"
+import { CustomSchemas } from "../index.js"
 
 
 export const RightResponseSchema=z.object({
@@ -58,9 +59,59 @@ export const UploadManuallyAdminRequestSchema=z.object({
     name:z.string(),
     email:z.string(),
     password:z.string(),
-    privelege:z.enum(["super_user","top_privelege","gaurd"])
+    privelege:z.enum(["super_user","top_privelege","gaurd"]),
+    allocatedHostel:z.string()
+})
+
+export const EditStudentRequestSchema=z.object({
+    type:z.literal("student"),
+    filterBy:z.enum({
+        entry_number:"entry_number",
+        email:"email"
+    }),
+    value:z.string(),
+    changed:z.object({
+        name:z.string(),
+        email:z.string(),
+        password:z.string(),
+        entry_number:z.string(),
+        hostel_name:z.string()
+    })
+})
+
+export const EditAdminRequestSchema=z.object({
+    type:z.literal("admin"),
+    filterBy:z.enum({
+        email:"email"
+    }),
+    value:z.string(),
+    changed:z.object({
+        name:z.string(),
+        email:z.string(),
+        password:z.string(),
+        privelege:z.string(),
+        allocatedHostel:z.string()
+    })
+})
+
+export const DeleteAdminRequestSchema=z.object({
+    type:z.literal("admin"),
+    filterBy:z.enum({
+        email:"email"
+    }),
+    value:z.string()
+})
+
+export const DeleteStudentRequestSchema=z.object({
+    type:z.literal("student"),
+    filterBy:z.enum({
+        email:"email",
+        entry_number:"entry_number"
+    }),
+    value:z.string()
 })
 
 export const UploadManuallyRequestSchema=z.union([UploadManuallyStudentRequestSchema,UploadManuallyAdminRequestSchema])
-
+export const EditRequestSchema=z.union([EditStudentRequestSchema,EditAdminRequestSchema])
 export const UploadManuallyResponseSchema=z.union([WrongResponseSchema,RightResponseSchema])
+export const DeleteRequestSchema=z.union([DeleteStudentRequestSchema,DeleteAdminRequestSchema])

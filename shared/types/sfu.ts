@@ -64,7 +64,8 @@ export type videoDetailsType={
 export type clientDetailsType={
     areConsumersMade:boolean,
     consumerTransport?:mediasoup.types.WebRtcTransport,
-    consumers:Map<string,mediasoup.types.Consumer> //cameraName,consumer
+    consumers:Map<string,mediasoup.types.Consumer>, //cameraName,consumer
+    allocatedHostel?:string
 }
 
 export type mediaMTXResponseType={

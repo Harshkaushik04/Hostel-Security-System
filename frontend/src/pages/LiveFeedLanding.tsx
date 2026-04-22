@@ -21,14 +21,13 @@ export default function LiveFeedLanding() {
           <div>
             <Link to="/admin" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back to Admin</Link>
             <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>
-              Live feed, past recordings & activities
+              Live feed & past recordings
             </h1>
             <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
               Choose an option below.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '260px' }}>
               <Link to="/admin/live-feed" style={linkStyle}>Live feed</Link>
-              <Link to="/admin/activities" style={secStyle}>Activities</Link>
               <Link to="/admin/past-recordings" style={secStyle}>Past recordings</Link>
             </div>
           </div>
