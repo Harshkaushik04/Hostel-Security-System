@@ -81,7 +81,7 @@ export async function addHostel(body: AddHostelBody) {
 
 // Manage: add/delete/edit users
 export async function addManually(body: Record<string, unknown>) {
-  return apiFetch<unknown>('/add-manually', { method: 'POST', json: body })
+  return apiFetch<unknown>('/upload-manually', { method: 'POST', json: body })
 }
 export async function editUser(body: Record<string, unknown>) {
   return apiFetch<unknown>('/edit', { method: 'POST', json: body })
