@@ -15,10 +15,38 @@ import WebSocket,{WebSocketServer} from "ws";
 import { createServer } from "http"
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
+import multer from "multer";
+import { parse } from "csv-parse/sync";
 
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
 });
+
+const csvUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024 },
+})
+
+function normalizeCsvHeader(header: string): string {
+    return header.trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_")
+}
+
+function parseCsvRecords(buf: Buffer): Record<string, string>[] {
+    const records = parse(buf.toString("utf8"), {
+        bom: true,
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+    }) as Record<string, string>[]
+    return records.map((row) => {
+        const out: Record<string, string> = {}
+        for (const [k, v] of Object.entries(row)) {
+            out[normalizeCsvHeader(k)] = String(v ?? "").trim()
+        }
+        return out
+    })
+}
 
 const app=express()
 app.use(cors({
@@ -59,6 +87,25 @@ mongoose.connect(MONGO_URL as string)
     process.exit(1); // Kill the Node server immediately if DB is unreachable
 });
 
+type CsvAdminGate =
+    | { ok: true; host: { privelege: string } }
+    | { ok: false; reason: "no_token" | "no_admin" }
+
+async function getAdminForCsv(req: Request): Promise<CsvAdminGate> {
+    let token = req.headers.token
+    if (!token) {
+        return { ok: false, reason: "no_token" }
+    }
+    token = token as string
+    const decryptedData = jwt.verify(token, JWT_SECRET as string) as jwt.JwtPayload
+    const host = await AdminModel.findOne({
+        email: decryptedData.email,
+    })
+    if (!host) {
+        return { ok: false, reason: "no_admin" }
+    }
+    return { ok: true, host: { privelege: host.privelege as string } }
+}
 
 app.post("/face-data",async (req:Request,res:Response)=>{
     console.log(`entered [face-data]`)
@@ -766,6 +813,205 @@ app.post("/get-admin-users-list",async (req:Request,res:Response)=>{
     }
 })
 
+//=========================== Camera -- hostel (CamerasModel) ============================
+app.post("/get-cameras-list", async (req: Request, res: Response) => {
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    try {
+        const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+        const admin = await AdminModel.findOne({
+            email:decryptedData.email
+        })
+        if(!admin){
+            return res.json({
+                error:"admin users only"
+            })
+        }
+        const docs = await CamerasModel.find().sort({ cameraName: 1 })
+        const cameras = docs.map((d) => ({
+            cameraName: d.cameraName,
+            hostelName: d.hostelName,
+        }))
+        return res.json({ cameras })
+    } catch {
+        return res.status(401).json({ error: "invalid token" })
+    }
+})
+
+app.post("/add-camera", async (req: Request, res: Response) => {
+    const reqCheck = CustomSchemas.manageUsers.AddCameraRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema invalid\n${reqCheck.error}`
+        })
+    }
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+    const host = await AdminModel.findOne({
+        email:decryptedData.email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege==="gaurd"){
+        return res.json({
+            error:"gaurd privelege cant manage cameras"
+        })
+    }
+    const reqBody: CustomTypes.manageUsers.AddCameraRequestType = req.body
+    const hostelOk = await HostelsModel.findOne({
+        hostel_name: reqBody.hostelName
+    })
+    if(!hostelOk){
+        return res.send({
+            approved:false,
+            error:"hostel does not exist — add it first under Manage hostels"
+        })
+    }
+    const dup = await CamerasModel.findOne({
+        cameraName: reqBody.cameraName
+    })
+    if(dup){
+        return res.send({
+            approved:false,
+            error:"camera name already exists"
+        })
+    }
+    await CamerasModel.create({
+        cameraName: reqBody.cameraName,
+        hostelName: reqBody.hostelName,
+    })
+    return res.send({
+        approved:true
+    })
+})
+
+app.post("/edit-camera", async (req: Request, res: Response) => {
+    const reqCheck = CustomSchemas.manageUsers.EditCameraRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema invalid\n${reqCheck.error}`
+        })
+    }
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+    const host = await AdminModel.findOne({
+        email:decryptedData.email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege==="gaurd"){
+        return res.json({
+            error:"gaurd privelege cant manage cameras"
+        })
+    }
+    const reqBody: CustomTypes.manageUsers.EditCameraRequestType = req.body
+    const hostelOk = await HostelsModel.findOne({
+        hostel_name: reqBody.hostelName
+    })
+    if(!hostelOk){
+        return res.send({
+            approved:false,
+            error:"hostel does not exist — add it first under Manage hostels"
+        })
+    }
+    const row = await CamerasModel.findOne({
+        cameraName: reqBody.cameraName
+    })
+    if(!row){
+        return res.send({
+            approved:false,
+            error:"camera not found"
+        })
+    }
+    const nextName = reqBody.newCameraName?.trim()
+    if(nextName && nextName !== row.cameraName){
+        const clash = await CamerasModel.findOne({
+            cameraName: nextName
+        })
+        if(clash){
+            return res.send({
+                approved:false,
+                error:"new camera name already in use"
+            })
+        }
+        row.cameraName = nextName
+    }
+    row.hostelName = reqBody.hostelName
+    await row.save()
+    return res.send({
+        approved:true
+    })
+})
+
+app.post("/delete-camera", async (req: Request, res: Response) => {
+    const reqCheck = CustomSchemas.manageUsers.DeleteCameraRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema invalid\n${reqCheck.error}`
+        })
+    }
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+    const host = await AdminModel.findOne({
+        email:decryptedData.email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege==="gaurd"){
+        return res.json({
+            error:"gaurd privelege cant manage cameras"
+        })
+    }
+    const reqBody: CustomTypes.manageUsers.DeleteCameraRequestType = req.body
+    const result = await CamerasModel.deleteOne({
+        cameraName: reqBody.cameraName
+    })
+    if(result.deletedCount === 0){
+        return res.send({
+            approved:false,
+            error:"camera not found"
+        })
+    }
+    return res.send({
+        approved:true
+    })
+})
+
 app.post("/upload-manually",async(req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.UploadManuallyRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
@@ -829,6 +1075,238 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
         })
     }
 })
+
+app.post(
+    "/upload-student-csv",
+    csvUpload.single("file"),
+    async (req: Request, res: Response) => {
+        const gate = await getAdminForCsv(req)
+        if (!gate.ok) {
+            if (gate.reason === "no_token") {
+                return res.json({
+                    error: "req.headers.token is null",
+                })
+            }
+            return res.json({
+                error: "host user not in db",
+            })
+        }
+        const { host } = gate
+        if (host.privelege === "gaurd") {
+            return res.json({
+                error: "gaurd privelege cant add students",
+            })
+        }
+        const f = req.file
+        if (!f?.buffer) {
+            return res.status(400).json({
+                approved: false,
+                error: "no file — use multipart field name: file",
+            })
+        }
+        let rows: Record<string, string>[]
+        try {
+            rows = parseCsvRecords(f.buffer)
+        } catch (e) {
+            return res.status(400).json({
+                approved: false,
+                error: e instanceof Error ? e.message : "invalid csv",
+            })
+        }
+        if (rows.length === 0) {
+            return res.json({
+                approved: false,
+                error: "csv has no data rows",
+            })
+        }
+        const rowErrors: { row: number; message: string }[] = []
+        let created = 0
+        let skipped = 0
+        const maxErrors = 100
+        for (let i = 0; i < rows.length; i++) {
+            const rowNum = i + 2
+            const r = rows[i]
+            const name = r.name
+            const email = r.email
+            const password = r.password
+            const entry_number = r.entry_number
+            const hostel_name = r.hostel_name
+            if (!name || !email || !password || !entry_number || !hostel_name) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        "missing column — need name, email, password, entry_number, hostel_name",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            const dup = await UserModel.findOne({
+                $or: [{ email }, { entry_number }],
+            })
+            if (dup) {
+                rowErrors.push({
+                    row: rowNum,
+                    message: "duplicate email or entry_number",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            try {
+                const hashed_password = await bcrypt.hash(password, 5)
+                await UserModel.create({
+                    name,
+                    email,
+                    password: hashed_password,
+                    entry_number,
+                    hostel_name,
+                })
+                created++
+            } catch (err) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        err instanceof Error ? err.message : "insert failed",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+            }
+        }
+        return res.json({
+            approved: true,
+            created,
+            skipped,
+            rowErrors,
+        })
+    }
+)
+
+app.post(
+    "/upload-admin-csv",
+    csvUpload.single("file"),
+    async (req: Request, res: Response) => {
+        const gate = await getAdminForCsv(req)
+        if (!gate.ok) {
+            if (gate.reason === "no_token") {
+                return res.json({
+                    error: "req.headers.token is null",
+                })
+            }
+            return res.json({
+                error: "host user not in db",
+            })
+        }
+        const { host } = gate
+        if (host.privelege === "gaurd") {
+            return res.json({
+                error: "gaurd privelege cant add admins",
+            })
+        }
+        const f = req.file
+        if (!f?.buffer) {
+            return res.status(400).json({
+                approved: false,
+                error: "no file — use multipart field name: file",
+            })
+        }
+        let rows: Record<string, string>[]
+        try {
+            rows = parseCsvRecords(f.buffer)
+        } catch (e) {
+            return res.status(400).json({
+                approved: false,
+                error: e instanceof Error ? e.message : "invalid csv",
+            })
+        }
+        if (rows.length === 0) {
+            return res.json({
+                approved: false,
+                error: "csv has no data rows",
+            })
+        }
+        const validPriv = new Set(["super_user", "top_privelege", "gaurd"])
+        const rowErrors: { row: number; message: string }[] = []
+        let created = 0
+        let skipped = 0
+        const maxErrors = 100
+        for (let i = 0; i < rows.length; i++) {
+            const rowNum = i + 2
+            const r = rows[i]
+            const name = r.name
+            const email = r.email
+            const password = r.password
+            const privelege = r.privelege
+            const allocatedHostel =
+                r.allocated_hostel || r.allocatedhostel || ""
+            if (!name || !email || !password || !privelege || !allocatedHostel) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        "missing column — need name, email, password, privelege, allocated_hostel",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            if (!validPriv.has(privelege)) {
+                rowErrors.push({
+                    row: rowNum,
+                    message: `invalid privelege (use super_user, top_privelege, gaurd): ${privelege}`,
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            if (host.privelege === "top_privelege" && privelege === "super_user") {
+                rowErrors.push({
+                    row: rowNum,
+                    message: "top_privelege cant add super_user",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            const dup = await AdminModel.findOne({
+                email,
+            })
+            if (dup) {
+                rowErrors.push({
+                    row: rowNum,
+                    message: "duplicate email",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            try {
+                const hashed_password = await bcrypt.hash(password, 5)
+                await AdminModel.create({
+                    name,
+                    email,
+                    password: hashed_password,
+                    privelege,
+                    allocatedHostel,
+                })
+                created++
+            } catch (err) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        err instanceof Error ? err.message : "insert failed",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+            }
+        }
+        return res.json({
+            approved: true,
+            created,
+            skipped,
+            rowErrors,
+        })
+    }
+)
 
 app.post("/edit",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.EditRequestSchema.safeParse(req.body);
@@ -944,7 +1422,7 @@ app.post("/edit",async (req:Request,res:Response)=>{
     }
 })
 
-app.post("delete",async (req:Request,res:Response)=>{
+app.post("/delete",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.DeleteRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
         return res.send({

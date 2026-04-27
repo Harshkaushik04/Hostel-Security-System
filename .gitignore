@@ -22,5 +22,5 @@ deepface_service/**/__pycache__/
 mediaMTX_server/mediamtx.exe
 aws_ssh.sh
 
-
+super_user.json
 commands.txt
