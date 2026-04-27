@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, primaryButton, secondaryButton, logoutButton, logoCircle } from '../styles/common'
 
@@ -6,6 +6,20 @@ const linkStyle = { ...primaryButton, textDecoration: 'none', textAlign: 'center
 const secLinkStyle = { ...secondaryButton, textDecoration: 'none', textAlign: 'center' as const }
 
 export default function AdminLanding() {
+  const navigate = useNavigate()
+
+  const onLogout = (e: React.MouseEvent) => {
+    e.preventDefault()
+    try {
+      window.localStorage.removeItem('token')
+    } catch {
+      // ignore
+    }
+
+    // Replace history entry so browser "Back" won't revive /admin.
+    navigate('/', { replace: true })
+  }
+
   return (
     <div style={layout}>
       <div style={card}>
@@ -47,7 +61,9 @@ export default function AdminLanding() {
             }}
           >
             <img src={collegeLogo} alt="College logo" style={{ ...logoCircle, maxWidth: '220px' }} />
-            <Link to="/" style={logoutButton}>Logout</Link>
+            <Link to="/" style={logoutButton} onClick={onLogout}>
+              Logout
+            </Link>
           </div>
         </div>
       </div>
