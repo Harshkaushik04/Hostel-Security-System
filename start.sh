@@ -12,7 +12,7 @@ tmux has-session -t $SESSION 2>/dev/null
 if [ $? != 0 ]; then
   # Create a new detached session and name the first window
   tmux new-session -d -s $SESSION -n "mongodb"
-  tmux send-keys -t $SESSION:0 "mongod --dbpath ~/mongodb-data --bind_ip 127.0.0.1,10.230.170.57" C-m
+  tmux send-keys -t $SESSION:0 "mongod --dbpath ~/mongodb-data --bind_ip 127.0.0.1,100.105.211.110" C-m
 
   # Window 1: Node Backend
   tmux new-window -t $SESSION -n "node_backend"

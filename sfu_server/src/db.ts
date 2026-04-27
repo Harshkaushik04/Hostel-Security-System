@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
+console.log(__dirname)
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
 });
@@ -42,6 +42,7 @@ const cameras=new mongoose.Schema<CustomTypes.db.camerasSchemaType>({
 })
 
 const visitors= new mongoose.Schema<CustomTypes.db.visitorsSchemaType>({
+    hostel_name:String,
     host_email:String,
     guest_name:String,
     guest_contact_number:String

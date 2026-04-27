@@ -10,8 +10,31 @@ import console from 'console';
 import type { streamDetailsType } from '../../shared/types/sfu.js';
 import axios from 'axios';
 import "dotenv/config"
+import dotenv from "dotenv"
 import type { CursorPos } from 'readline';
 import { CamerasModel } from './db.js';
+import path from "path"
+import mongoose from "mongoose"
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({
+  path: path.resolve(__dirname, "../.env")
+});
+const MONGO_URL=process.env.MONGO_URL
+
+if(!MONGO_URL){
+    throw new Error("MONGO_URL not present in .env")
+}
+mongoose.connect(MONGO_URL as string)
+.then(() => {
+    console.log("Successfully connected to MongoDB");
+})
+.catch((err) => {
+    console.error("Database connection failed:", err.message);
+    process.exit(1); // Kill the Node server immediately if DB is unreachable
+});
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -186,9 +209,25 @@ async function run() {
                         return;
                     }
                     let consumerTransport:mediasoup.types.WebRtcTransport|undefined=clientDetails.consumerTransport;
+                    let allocatedHostel:string|undefined=clientDetails.allocatedHostel
                     if(!consumerTransport){
                         console.log("consumerTransport is undefined");
                         return;
+                    }
+                    if(!allocatedHostel){
+                        console.log("allocatedHostel is undefined");
+                        return;
+                    }
+                    const proposedCamera=await CamerasModel.findOne({
+                        hostelName:allocatedHostel
+                    })
+                    if(!proposedCamera){
+                        console.log(`no camera corrosponding to allocatedHostel-${allocatedHostel}`)
+                        continue;
+                    }
+                    if(proposedCamera.cameraName!=cameraName){
+                        console.log(`allocated hostel:${allocatedHostel} doesnt have rights over camera:${cameraName}`) 
+                        continue;
                     }
                     let consumer = await consumerTransport.consume({
                         producerId:producer.id,
@@ -207,7 +246,8 @@ async function run() {
                     clients.set(ws,{
                         areConsumersMade:true,
                         consumerTransport:consumerTransport,
-                        consumers:mpp
+                        consumers:mpp,
+                        allocatedHostel:allocatedHostel
                     });
                     const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                         id:consumer.id,
@@ -402,7 +442,8 @@ async function run() {
                             clients.set(ws,{
                                 areConsumersMade:true,
                                 consumerTransport:consumerTransport,
-                                consumers:mpp
+                                consumers:mpp,
+                                allocatedHostel:allocatedHostel
                             });
                             const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                                 id:consumer.id,

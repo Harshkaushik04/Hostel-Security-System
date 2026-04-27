@@ -39,6 +39,7 @@ const cameras=new mongoose.Schema<CustomTypes.db.camerasSchemaType>({
 })
 
 const visitors= new mongoose.Schema<CustomTypes.db.visitorsSchemaType>({
+    hostel_name:String,
     host_email:String,
     guest_name:String,
     guest_contact_number:String
