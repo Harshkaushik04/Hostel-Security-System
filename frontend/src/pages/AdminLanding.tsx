@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, primaryButton, secondaryButton, logoutButton, logoCircle } from '../styles/common'
 
@@ -6,6 +6,15 @@ const linkStyle = { ...primaryButton, textDecoration: 'none', textAlign: 'center
 const secLinkStyle = { ...secondaryButton, textDecoration: 'none', textAlign: 'center' as const }
 
 export default function AdminLanding() {
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('token')
+    }
+    navigate('/', { replace: true })
+  }
+
   return (
     <div style={layout}>
       <div style={card}>
@@ -28,6 +37,9 @@ export default function AdminLanding() {
               <Link to="/admin/manage" style={secLinkStyle}>
                 Manage students / admin list
               </Link>
+              <Link to="/admin/cameras" style={secLinkStyle}>
+                Cameras & hostels
+              </Link>
               <Link to="/admin/notifications" style={secLinkStyle}>
                 Notifications
               </Link>
@@ -47,7 +59,13 @@ export default function AdminLanding() {
             }}
           >
             <img src={collegeLogo} alt="College logo" style={{ ...logoCircle, maxWidth: '220px' }} />
-            <Link to="/" style={logoutButton}>Logout</Link>
+            <button
+              type="button"
+              style={logoutButton}
+              onClick={handleLogout}
+            >
+              Logout
+            </button>
           </div>
         </div>
       </div>
