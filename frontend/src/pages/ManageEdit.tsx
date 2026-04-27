@@ -1,14 +1,23 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { addManually, editUser, deleteUser, uploadCsv } from '../api/endpoints'
+import { useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { addManually, editUser, deleteUser, uploadCsv, type AdminPrivilegeApiValue } from '../api/endpoints'
 import { layout, card, primaryButton, secondaryButton, inputStyle } from '../styles/common'
 
 export default function ManageEdit() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialType = useMemo(() => {
+    const t = (searchParams.get('type') ?? '').toLowerCase()
+    return t === 'admin' ? 'admin' : 'student'
+  }, [searchParams])
+  const [userType, setUserType] = useState<'student' | 'admin'>(initialType)
+
   const [addName, setAddName] = useState('')
   const [addEmail, setAddEmail] = useState('')
   const [addPassword, setAddPassword] = useState('')
   const [addEntryNumber, setAddEntryNumber] = useState('')
   const [addHostelName, setAddHostelName] = useState('')
+  const [addPrivilege, setAddPrivilege] = useState<AdminPrivilegeApiValue>('gaurd')
+  const [addAllocatedHostel, setAddAllocatedHostel] = useState('')
   const [addResult, setAddResult] = useState('')
   const [editResult, setEditResult] = useState('')
   const [deleteResult, setDeleteResult] = useState('')
@@ -20,6 +29,8 @@ export default function ManageEdit() {
   const [editPassword, setEditPassword] = useState('')
   const [editEntryNumber, setEditEntryNumber] = useState('')
   const [editHostelName, setEditHostelName] = useState('')
+  const [editPrivilege, setEditPrivilege] = useState<AdminPrivilegeApiValue>('gaurd')
+  const [editAllocatedHostel, setEditAllocatedHostel] = useState('')
   const [deleteFilterBy, setDeleteFilterBy] = useState<'email' | 'entry_number'>('email')
   const [deleteFilterValue, setDeleteFilterValue] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ filterBy: 'email' | 'entry_number'; value: string } | null>(null)
@@ -42,20 +53,39 @@ export default function ManageEdit() {
   const handleAddManually = async () => {
     setError('')
     setAddResult('')
-    if (!addName.trim() || !addEmail.trim() || !addPassword.trim() || !addEntryNumber.trim() || !addHostelName.trim()) {
-      setError('Fill all add-student fields before submitting.')
-      return
-    }
     setLoading(true)
     try {
-      const body = {
-        type: 'student',
-        name: addName.trim(),
-        email: addEmail.trim(),
-        password: addPassword,
-        entry_number: addEntryNumber.trim(),
-        hostel_name: addHostelName.trim(),
+      const body =
+        userType === 'student'
+          ? ({
+              type: 'student',
+              name: addName.trim(),
+              email: addEmail.trim(),
+              password: addPassword,
+              entry_number: addEntryNumber.trim(),
+              hostel_name: addHostelName.trim(),
+            } as const)
+          : ({
+              type: 'admin',
+              name: addName.trim(),
+              email: addEmail.trim(),
+              password: addPassword,
+              privelege: addPrivilege,
+              allocatedHostel: addAllocatedHostel.trim(),
+            } as const)
+
+      if (userType === 'student') {
+        if (!body.name || !body.email || !body.password || !body.entry_number || !body.hostel_name) {
+          setError('Fill all add-student fields before submitting.')
+          return
+        }
+      } else {
+        if (!body.name || !body.email || !body.password || !body.privelege || !body.allocatedHostel) {
+          setError('Fill all add-admin fields before submitting.')
+          return
+        }
       }
+
       const res = await addManually(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -67,6 +97,8 @@ export default function ManageEdit() {
         setAddPassword('')
         setAddEntryNumber('')
         setAddHostelName('')
+        setAddPrivilege('gaurd')
+        setAddAllocatedHostel('')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Request failed')
@@ -82,24 +114,51 @@ export default function ManageEdit() {
       setError('First choose a filter and click "Filter" in Edit section.')
       return
     }
-    if (!editName.trim() || !editEmail.trim() || !editPassword.trim() || !editEntryNumber.trim() || !editHostelName.trim()) {
-      setError('Fill all edit fields before submitting.')
-      return
-    }
     setLoading(true)
     try {
-      const body = {
-        type: 'student',
-        filterBy: editTarget.filterBy,
-        value: editTarget.value,
-        changed: {
-          name: editName.trim(),
-          email: editEmail.trim(),
-          password: editPassword,
-          entry_number: editEntryNumber.trim(),
-          hostel_name: editHostelName.trim(),
-        },
+      const body =
+        userType === 'student'
+          ? ({
+              type: 'student',
+              filterBy: editTarget.filterBy,
+              value: editTarget.value,
+              changed: {
+                name: editName.trim(),
+                email: editEmail.trim(),
+                password: editPassword,
+                entry_number: editEntryNumber.trim(),
+                hostel_name: editHostelName.trim(),
+              },
+            } as const)
+          : ({
+              type: 'admin',
+              filterBy: 'email',
+              value: editTarget.value,
+              changed: {
+                name: editName.trim(),
+                email: editEmail.trim(),
+                password: editPassword,
+                privelege: editPrivilege,
+                allocatedHostel: editAllocatedHostel.trim(),
+              },
+            } as const)
+
+      if (!body.changed.name || !body.changed.email || !body.changed.password) {
+        setError('Fill all edit fields before submitting.')
+        return
       }
+      if (userType === 'student') {
+        if (!body.changed.entry_number || !body.changed.hostel_name) {
+          setError('Fill all edit-student fields before submitting.')
+          return
+        }
+      } else {
+        if (!body.changed.privelege || !body.changed.allocatedHostel) {
+          setError('Fill all edit-admin fields before submitting.')
+          return
+        }
+      }
+
       const res = await editUser(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -123,11 +182,18 @@ export default function ManageEdit() {
     }
     setLoading(true)
     try {
-      const body = {
-        type: 'student',
-        filterBy: deleteTarget.filterBy,
-        value: deleteTarget.value,
-      }
+      const body =
+        userType === 'student'
+          ? ({
+              type: 'student',
+              filterBy: deleteTarget.filterBy,
+              value: deleteTarget.value,
+            } as const)
+          : ({
+              type: 'admin',
+              filterBy: 'email',
+              value: deleteTarget.value,
+            } as const)
       const res = await deleteUser(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -150,7 +216,7 @@ export default function ManageEdit() {
       setError('Enter email or entry number for Edit filter.')
       return
     }
-    setEditTarget({ filterBy: editFilterBy, value })
+    setEditTarget({ filterBy: userType === 'admin' ? 'email' : editFilterBy, value })
   }
 
   const applyDeleteFilter = () => {
@@ -161,7 +227,22 @@ export default function ManageEdit() {
       setError('Enter email or entry number for Delete filter.')
       return
     }
-    setDeleteTarget({ filterBy: deleteFilterBy, value })
+    setDeleteTarget({ filterBy: userType === 'admin' ? 'email' : deleteFilterBy, value })
+  }
+
+  const onChangeUserType = (next: 'student' | 'admin') => {
+    setUserType(next)
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev)
+      p.set('type', next)
+      return p
+    })
+    setError('')
+    setAddResult('')
+    setEditResult('')
+    setDeleteResult('')
+    setEditTarget(null)
+    setDeleteTarget(null)
   }
 
   const handleUploadCsv = async () => {
@@ -194,37 +275,68 @@ export default function ManageEdit() {
           Manage students / admin — Add, delete, edit
         </h1>
         <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
-          [express] /add-manually, /edit, /delete, /upload-csv
+          [express] /upload-manually, /edit, /delete, /upload-csv
         </p>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+          <button type="button" style={userType === 'student' ? primaryButton : secondaryButton} onClick={() => onChangeUserType('student')}>
+            Student
+          </button>
+          <button type="button" style={userType === 'admin' ? primaryButton : secondaryButton} onClick={() => onChangeUserType('admin')}>
+            Admin
+          </button>
+        </div>
         {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
         <div style={{ display: 'grid', gap: '1.5rem' }}>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Add student</h2>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Add {userType === 'admin' ? 'admin' : 'student'}</h2>
             <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <input type="text" style={inputStyle} placeholder="Name" value={addName} onChange={(e) => setAddName(e.target.value)} />
               <input type="email" style={inputStyle} placeholder="Email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} />
               <input type="text" style={inputStyle} placeholder="Password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} />
-              <input type="text" style={inputStyle} placeholder="Entry number" value={addEntryNumber} onChange={(e) => setAddEntryNumber(e.target.value)} />
-              <input type="text" style={inputStyle} placeholder="Hostel name" value={addHostelName} onChange={(e) => setAddHostelName(e.target.value)} />
+              {userType === 'student' ? (
+                <>
+                  <input type="text" style={inputStyle} placeholder="Entry number" value={addEntryNumber} onChange={(e) => setAddEntryNumber(e.target.value)} />
+                  <input type="text" style={inputStyle} placeholder="Hostel name" value={addHostelName} onChange={(e) => setAddHostelName(e.target.value)} />
+                </>
+              ) : (
+                <>
+                  <select value={addPrivilege} onChange={(e) => setAddPrivilege(e.target.value as AdminPrivilegeApiValue)} style={inputStyle}>
+                    <option value="gaurd">Guard</option>
+                    <option value="top_privelege">Top privilege</option>
+                    <option value="super_user">Super user</option>
+                  </select>
+                  <input
+                    type="text"
+                    style={inputStyle}
+                    placeholder="Allocated hostel"
+                    value={addAllocatedHostel}
+                    onChange={(e) => setAddAllocatedHostel(e.target.value)}
+                  />
+                </>
+              )}
             </div>
             <button type="button" style={primaryButton} onClick={handleAddManually} disabled={loading}>Add</button>
             {addResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{addResult}</pre>}
           </section>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Edit student</h2>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Edit {userType === 'admin' ? 'admin' : 'student'}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <select
-                value={editFilterBy}
-                onChange={(e) => setEditFilterBy(e.target.value as 'email' | 'entry_number')}
-                style={{ ...inputStyle, maxWidth: 170 }}
-              >
-                <option value="email">Filter by email</option>
-                <option value="entry_number">Filter by entry number</option>
-              </select>
+              {userType === 'student' ? (
+                <select
+                  value={editFilterBy}
+                  onChange={(e) => setEditFilterBy(e.target.value as 'email' | 'entry_number')}
+                  style={{ ...inputStyle, maxWidth: 170 }}
+                >
+                  <option value="email">Filter by email</option>
+                  <option value="entry_number">Filter by entry number</option>
+                </select>
+              ) : (
+                <span style={{ color: '#e5e7eb', fontSize: '0.9rem' }}>Filter by email</span>
+              )}
               <input
                 type="text"
                 style={{ ...inputStyle, maxWidth: 280 }}
-                placeholder={editFilterBy === 'email' ? 'student@email.com' : 'Entry number'}
+                placeholder={userType === 'admin' || editFilterBy === 'email' ? 'email@example.com' : 'Entry number'}
                 value={editFilterValue}
                 onChange={(e) => setEditFilterValue(e.target.value)}
               />
@@ -232,34 +344,57 @@ export default function ManageEdit() {
             </div>
             {editTarget && (
               <p style={{ color: '#9ca3af', marginBottom: '0.75rem' }}>
-                Selected student: {editTarget.filterBy} = {editTarget.value}
+                Selected {userType === 'admin' ? 'admin' : 'student'}: {editTarget.filterBy} = {editTarget.value}
               </p>
             )}
             <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <input type="text" style={inputStyle} placeholder="New name" value={editName} onChange={(e) => setEditName(e.target.value)} />
               <input type="email" style={inputStyle} placeholder="New email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
               <input type="text" style={inputStyle} placeholder="New password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} />
-              <input type="text" style={inputStyle} placeholder="New entry number" value={editEntryNumber} onChange={(e) => setEditEntryNumber(e.target.value)} />
-              <input type="text" style={inputStyle} placeholder="New hostel name" value={editHostelName} onChange={(e) => setEditHostelName(e.target.value)} />
+              {userType === 'student' ? (
+                <>
+                  <input type="text" style={inputStyle} placeholder="New entry number" value={editEntryNumber} onChange={(e) => setEditEntryNumber(e.target.value)} />
+                  <input type="text" style={inputStyle} placeholder="New hostel name" value={editHostelName} onChange={(e) => setEditHostelName(e.target.value)} />
+                </>
+              ) : (
+                <>
+                  <select value={editPrivilege} onChange={(e) => setEditPrivilege(e.target.value as AdminPrivilegeApiValue)} style={inputStyle}>
+                    <option value="gaurd">Guard</option>
+                    <option value="top_privelege">Top privilege</option>
+                    <option value="super_user">Super user</option>
+                  </select>
+                  <input
+                    type="text"
+                    style={inputStyle}
+                    placeholder="Allocated hostel"
+                    value={editAllocatedHostel}
+                    onChange={(e) => setEditAllocatedHostel(e.target.value)}
+                  />
+                </>
+              )}
             </div>
             <button type="button" style={primaryButton} onClick={handleEditUser} disabled={loading}>Edit</button>
             {editResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{editResult}</pre>}
           </section>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Delete student</h2>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Delete {userType === 'admin' ? 'admin' : 'student'}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <select
-                value={deleteFilterBy}
-                onChange={(e) => setDeleteFilterBy(e.target.value as 'email' | 'entry_number')}
-                style={{ ...inputStyle, maxWidth: 170 }}
-              >
-                <option value="email">Filter by email</option>
-                <option value="entry_number">Filter by entry number</option>
-              </select>
+              {userType === 'student' ? (
+                <select
+                  value={deleteFilterBy}
+                  onChange={(e) => setDeleteFilterBy(e.target.value as 'email' | 'entry_number')}
+                  style={{ ...inputStyle, maxWidth: 170 }}
+                >
+                  <option value="email">Filter by email</option>
+                  <option value="entry_number">Filter by entry number</option>
+                </select>
+              ) : (
+                <span style={{ color: '#e5e7eb', fontSize: '0.9rem' }}>Filter by email</span>
+              )}
               <input
                 type="text"
                 style={{ ...inputStyle, maxWidth: 280 }}
-                placeholder={deleteFilterBy === 'email' ? 'student@email.com' : 'Entry number'}
+                placeholder={userType === 'admin' || deleteFilterBy === 'email' ? 'email@example.com' : 'Entry number'}
                 value={deleteFilterValue}
                 onChange={(e) => setDeleteFilterValue(e.target.value)}
               />
@@ -267,7 +402,7 @@ export default function ManageEdit() {
             </div>
             {deleteTarget && (
               <p style={{ color: '#9ca3af', marginBottom: '0.75rem' }}>
-                Selected student: {deleteTarget.filterBy} = {deleteTarget.value}
+                Selected {userType === 'admin' ? 'admin' : 'student'}: {deleteTarget.filterBy} = {deleteTarget.value}
               </p>
             )}
             <button type="button" style={primaryButton} onClick={handleDeleteUser} disabled={loading}>Delete</button>

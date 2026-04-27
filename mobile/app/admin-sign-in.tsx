@@ -30,7 +30,7 @@ export default function AdminSignIn() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={styles.screenCentered}>
       <View style={styles.card}>
         <Text style={styles.title}>Admin Sign In</Text>
         <Text style={styles.subtitle}>

@@ -1,6 +1,6 @@
 import { Link, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { getPastRecording } from '../../../src/api/endpoints'
 import { styles } from '../../../src/ui/styles'
 
@@ -33,7 +33,7 @@ export default function PastRecordingPlayer() {
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 24 }}>
       <View style={styles.card}>
         <Link href="/admin/past-recordings" asChild>
-          <Pressable style={[styles.buttonSecondary, { marginBottom: 12 }]}>
+          <Pressable style={StyleSheet.flatten([styles.buttonSecondary, { marginBottom: 12 }])}>
             <Text style={styles.buttonTextSecondary}>← Back to Past recordings</Text>
           </Pressable>
         </Link>

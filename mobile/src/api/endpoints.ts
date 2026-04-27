@@ -67,7 +67,7 @@ export function addHostel(body: AddHostelBody) {
 
 // Manage user actions
 export function addManually(body: Record<string, unknown>) {
-  return apiFetch<unknown>('/add-manually', { method: 'POST', json: body })
+  return apiFetch<unknown>('/upload-manually', { method: 'POST', json: body })
 }
 
 export function editUser(body: Record<string, unknown>) {

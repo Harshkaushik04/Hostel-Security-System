@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "dec40b47-332e-436d-b576-b2db3dbbd4a9"
+      }
+    },
+    "android": {
+      "package": "com.yashhatwar99.app"
+    }
+  }
+}

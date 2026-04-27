@@ -1,6 +1,6 @@
 import { Link } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { fetchPreviousNotifications } from '../../src/api/endpoints'
 import { useNotificationsWebSocket } from '../../src/hooks/useNotificationsWebSocket'
 import { styles } from '../../src/ui/styles'
@@ -35,7 +35,7 @@ export default function Notifications() {
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 24 }}>
       <View style={styles.card}>
         <Link href="/admin" asChild>
-          <Pressable style={[styles.buttonSecondary, { marginBottom: 12 }]}>
+          <Pressable style={StyleSheet.flatten([styles.buttonSecondary, { marginBottom: 12 }])}>
             <Text style={styles.buttonTextSecondary}>← Back to Admin</Text>
           </Pressable>
         </Link>

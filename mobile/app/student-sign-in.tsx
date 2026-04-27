@@ -30,7 +30,7 @@ export default function StudentSignIn() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={styles.screenCentered}>
       <View style={styles.card}>
         <Text style={styles.title}>Student Sign In</Text>
         <Text style={styles.subtitle}>Use your registered student credentials.</Text>

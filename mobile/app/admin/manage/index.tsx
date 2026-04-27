@@ -1,6 +1,6 @@
 import { Link } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import {
   addHostel,
   getAdminUsersList,
@@ -124,12 +124,12 @@ export default function ManageList() {
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 24 }}>
       <View style={styles.card}>
         <Link href="/admin" asChild>
-          <Pressable style={[styles.buttonSecondary, { marginBottom: 12 }]}>
+          <Pressable style={StyleSheet.flatten([styles.buttonSecondary, { marginBottom: 12 }])}>
             <Text style={styles.buttonTextSecondary}>← Back to Admin</Text>
           </Pressable>
         </Link>
 
-        <Text style={styles.title}>Manage students / admin list</Text>
+        <Text style={styles.title}>Manage students / admin</Text>
 
         <View style={[styles.row, { marginVertical: 12 }]}>
           <Pressable
@@ -253,7 +253,13 @@ export default function ManageList() {
                       ? `${u[0] ?? ''} (${u[1] ?? ''}) — ${u[2] ?? ''}`
                       : `${u[0] ?? ''} — ${u[1] ?? ''}${u[2] ? ` — ${u[2]}` : ''}`}
                   </Text>
-                  <Link href="/admin/manage/edit" asChild>
+                  <Link
+                    href={{
+                      pathname: '/admin/manage/edit',
+                      params: { type: selectedPrivilege ? 'admin' : 'student' },
+                    }}
+                    asChild
+                  >
                     <Pressable>
                       <Text style={styles.buttonTextSecondary}>Edit</Text>
                     </Pressable>
@@ -265,7 +271,13 @@ export default function ManageList() {
         )}
 
         <View style={{ marginTop: 16 }}>
-          <Link href="/admin/manage/edit" asChild>
+          <Link
+            href={{
+              pathname: '/admin/manage/edit',
+              params: { type: tab === 'admin' ? 'admin' : 'student' },
+            }}
+            asChild
+          >
             <Pressable style={styles.buttonPrimary}>
               <Text style={styles.buttonTextPrimary}>Add / Delete / Edit users →</Text>
             </Pressable>

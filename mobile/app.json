@@ -22,7 +22,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.yashhatwar99.mobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -30,6 +31,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "34049e1b-112a-42b4-9efc-9107795bcb53"
+      }
+    },
+    "owner": "yashhatwar99"
   }
 }

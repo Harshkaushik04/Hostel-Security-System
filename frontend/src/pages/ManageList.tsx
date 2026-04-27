@@ -210,14 +210,24 @@ export default function ManageList() {
                           ? `${u[0] ?? ''} (${u[1] ?? ''}) — ${u[2] ?? ''}`
                           : `${u[0] ?? ''} — ${u[1] ?? ''}${u[2] ? ` — ${u[2]}` : ''}`}
                       </span>
-                      <Link to="/admin/manage/edit" style={{ ...secondaryButton, textDecoration: 'none' }}>Edit</Link>
+                      <Link
+                        to={`/admin/manage/edit?type=${selectedPrivilege ? 'admin' : 'student'}`}
+                        style={{ ...secondaryButton, textDecoration: 'none' }}
+                      >
+                        Edit
+                      </Link>
                     </li>
                   ))}
                 </ul>
               </>
             )}
             <div style={{ marginTop: '1.5rem' }}>
-              <Link to="/admin/manage/edit" style={{ ...primaryButton, textDecoration: 'none' }}>Add / Delete / Edit users →</Link>
+              <Link
+                to={`/admin/manage/edit?type=${tab === 'admin' ? 'admin' : 'student'}`}
+                style={{ ...primaryButton, textDecoration: 'none' }}
+              >
+                Add / Delete / Edit users →
+              </Link>
             </div>
           </div>
 
