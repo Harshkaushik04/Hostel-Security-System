@@ -32,7 +32,10 @@ function App() {
         <Route path="/admin/live-feed-landing" element={<LiveFeedLanding />} />
         <Route path="/admin/live-feed" element={<LiveFeed />} />
         <Route path="/admin/past-recordings" element={<PastRecordingsLanding />} />
-        <Route path="/admin/past-recordings/:recordingId" element={<PastRecordingPlayer />} />
+        <Route
+          path="/admin/past-recordings/play/:cameraName/:filename"
+          element={<PastRecordingPlayer />}
+        />
         <Route path="/admin/manage" element={<ManageList />} />
         <Route path="/admin/manage/edit" element={<ManageEdit />} />
         <Route path="/admin/notifications" element={<Notifications />} />

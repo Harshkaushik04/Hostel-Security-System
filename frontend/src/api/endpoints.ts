@@ -37,9 +37,10 @@ export async function fetchEmergencies() {
   return apiFetch<unknown>('/emergencies', { method: 'GET' })
 }
 
-// Past recordings
-export async function getPastRecording(params: Record<string, string>) {
-  return apiFetch<unknown>('/get-past-recording', { method: 'POST', json: params })
+// Past recordings (Node backend: GET /recordings/:cameraName → { files: string[] })
+export async function listRecordings(cameraName: string) {
+  const q = encodeURIComponent(cameraName.trim())
+  return apiFetch<{ files: string[] }>(`/recordings/${q}`, { method: 'GET' })
 }
 
 // Manage: hostels & admin list

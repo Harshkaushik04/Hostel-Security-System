@@ -3,6 +3,13 @@
  */
 export const API_BASE = `http://${import.meta.env.VITE_BACKEND_IP}:3000`;
 
+/** Direct URL for `<video src>` (browser cannot send custom headers on media requests). */
+export function recordingsStreamUrl(cameraName: string, filename: string): string {
+  const cam = encodeURIComponent(cameraName)
+  const file = encodeURIComponent(filename)
+  return `${API_BASE}/recordings/stream/${cam}/${file}`
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit & { json?: unknown } = {}
