@@ -115,3 +115,28 @@ export const UploadManuallyRequestSchema=z.union([UploadManuallyStudentRequestSc
 export const EditRequestSchema=z.union([EditStudentRequestSchema,EditAdminRequestSchema])
 export const UploadManuallyResponseSchema=z.union([WrongResponseSchema,RightResponseSchema])
 export const DeleteRequestSchema=z.union([DeleteStudentRequestSchema,DeleteAdminRequestSchema])
+
+/** Camera ↔ hostel (CamerasModel / camerasSchemaType) */
+export const CameraRowSchema=z.object({
+    cameraName:z.string().min(1),
+    hostelName:z.string().min(1),
+})
+
+export const GetCamerasListRightResponseSchema=z.object({
+    cameras:z.array(CameraRowSchema),
+})
+
+export const AddCameraRequestSchema=z.object({
+    cameraName:z.string().min(1),
+    hostelName:z.string().min(1),
+})
+
+export const EditCameraRequestSchema=z.object({
+    cameraName:z.string().min(1),
+    hostelName:z.string().min(1),
+    newCameraName:z.string().min(1).optional(),
+})
+
+export const DeleteCameraRequestSchema=z.object({
+    cameraName:z.string().min(1),
+})
