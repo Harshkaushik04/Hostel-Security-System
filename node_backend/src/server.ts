@@ -160,6 +160,179 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
     }
 })
 
+//=========================== MediaMTX->node_backend recordings save ============================
+const RECORDINGS_BASE_DIR = '/home/harsh/recordings';
+const recordingProcesses = new Map<string, ChildProcess>();
+
+// Make sure base directory exists
+if (!fs.existsSync(RECORDINGS_BASE_DIR)) {
+    fs.mkdirSync(RECORDINGS_BASE_DIR, { recursive: true });
+}
+
+/*
+  1. START RECORDING (Save from MediaMTX)
+  Body: { cameraName: "camera1" }
+ */
+app.post('/recordings/start', (req: Request, res: Response) => {
+    const cameraName = req.query.cameraName as string;
+    if (!cameraName) return res.status(400).json({ error: 'cameraName is required' });
+
+    if (recordingProcesses.has(cameraName)) {
+        return res.status(400).json({ error: `Recording already running for ${cameraName}` });
+    }
+
+    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
+    if (!fs.existsSync(cameraDir)) {
+        fs.mkdirSync(cameraDir, { recursive: true });
+    }
+    // Connects to your local MediaMTX container
+    const rtspUrl = `rtsp://${process.env.MEDIAMTX_IP || 'localhost'}:8554/${cameraName}`;
+    const outputPattern = path.join(cameraDir, '%Y-%m-%d_%H-%M-%S.mp4');
+
+    const ffmpegArgs = [
+        '-rtsp_transport', 'tcp',
+        '-timeout', '5000000',
+        '-fflags', '+genpts',
+        '-i', rtspUrl,
+        '-c:v', 'copy',
+        '-an',
+        '-f', 'segment',
+        '-segment_time', '30',
+        '-segment_format', 'mp4',
+        '-segment_format_options', 'movflags=+faststart',
+        '-reset_timestamps', '1',
+        '-strftime', '1',
+        outputPattern
+    ];
+    let ffmpeg:ChildProcess = spawn('ffmpeg', ffmpegArgs);
+    recordingProcesses.set(cameraName, ffmpeg);
+
+    ffmpeg.stderr?.on('data', (data) => {
+        const message = data.toString().trim();
+        if (message.length > 0) {
+            console.log(`[FFmpeg ${cameraName}] ${message}`);
+        }
+    });
+
+    ffmpeg.on('close', (code) => {
+        if (code === 0 || code === null) {
+            console.log(`Recording stopped for ${cameraName} (Code: ${code})`);
+        } else {
+            console.error(`Recording crashed for ${cameraName} (Code: ${code})`);
+        }
+        recordingProcesses.delete(cameraName);
+    });
+
+    return res.json({ message: `Recording started for ${cameraName}` });
+});
+
+/*
+  2. STOP RECORDING
+  Body: { cameraName: "camera1" }
+ */
+app.post('/recordings/stop', (req: Request, res: Response) => {
+    const cameraName  = req.query.cameraName as string;
+    const ffmpegProcess = recordingProcesses.get(cameraName);
+
+    if (!ffmpegProcess) {
+        return res.status(400).json({ error: 'No active recording found' });
+    }
+
+    // SIGINT allows FFmpeg to safely finalize the MP4 file before closing
+    ffmpegProcess.kill('SIGINT');
+    recordingProcesses.delete(cameraName);
+
+    return res.json({ message: `Recording stopped for ${cameraName}` });
+});
+
+//=========================== Frontend->node_backend recordings quering ============================
+/*
+  1. GET LIST OF RECORDINGS
+  Example: GET /recordings/camera1
+ */
+type singleCameraType={
+    cameraName:string
+}
+type singleCameraTypeWthFileNameType={
+    cameraName:string,
+    filename:string
+}
+
+app.get('/recordings/:cameraName', (req: Request, res: Response) => {
+    const { cameraName } = req.params as singleCameraType;
+    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
+
+    if (!fs.existsSync(cameraDir)) {
+        return res.json({ files: [] });
+    }
+
+    const files = fs.readdirSync(cameraDir)
+        .filter(file => file.endsWith('.mp4'))
+        .sort(); // Chronological order based on timestamp filenames
+
+    // While recording, the newest segment can still be open and not playable yet.
+    const playableFiles = recordingProcesses.has(cameraName) ? files.slice(0, -1) : files;
+
+    return res.json({ files: playableFiles });
+});
+
+/*
+  2. STREAM RECORDING (Supports Play, Pause, Seek natively)
+  Example: GET /recordings/stream/camera1/2026-04-28_12-00-00.mp4
+ */
+app.get('/recordings/stream/:cameraName/:filename', (req: Request, res: Response) => {
+    const { cameraName, filename } = req.params as singleCameraTypeWthFileNameType;
+    const videoPath = path.join(RECORDINGS_BASE_DIR, cameraName, filename);
+    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
+
+    if (!fs.existsSync(videoPath)) {
+        return res.status(404).send('Video file not found');
+    }
+
+    if (recordingProcesses.has(cameraName) && fs.existsSync(cameraDir)) {
+        const mp4Files = fs.readdirSync(cameraDir)
+            .filter(file => file.endsWith('.mp4'))
+            .sort();
+        const latestFile = mp4Files[mp4Files.length - 1];
+        if (latestFile === filename) {
+            return res.status(409).send('Recording is still in progress for this file. Try an older segment or stop recording first.');
+        }
+    }
+
+    const stat = fs.statSync(videoPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    if (range) {
+        // The browser is asking for a specific chunk (Seeking or continuing playback)
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        const chunksize = (end - start) + 1;
+        const file = fs.createReadStream(videoPath, { start, end });
+        
+        const head = {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunksize,
+            'Content-Type': 'video/mp4',
+        };
+
+        // 206 Partial Content is critical for pausing/seeking to work
+        res.writeHead(206, head);
+        file.pipe(res);
+    } else {
+        // Fallback if the browser doesn't send a Range header (rare for modern <video> tags)
+        const head = {
+            'Content-Length': fileSize,
+            'Content-Type': 'video/mp4',
+        };
+        res.writeHead(200, head);
+        fs.createReadStream(videoPath).pipe(res);
+    }
+});
+
 
 function authMiddleware(req:Request,res:Response,next:NextFunction){
     if(req.headers.token){
@@ -918,153 +1091,4 @@ const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 server.listen(PORT,  () => {
   console.log(`Server running on port ${PORT}`);
-});
-
-//=========================== MediaMTX->node_backend recordings save ============================
-const RECORDINGS_BASE_DIR = '/home/harsh/recordings';
-const recordingProcesses = new Map<string, ChildProcess>();
-
-// Make sure base directory exists
-if (!fs.existsSync(RECORDINGS_BASE_DIR)) {
-    fs.mkdirSync(RECORDINGS_BASE_DIR, { recursive: true });
-}
-
-/*
-  1. START RECORDING (Save from MediaMTX)
-  Body: { cameraName: "camera1" }
- */
-app.post('/recordings/start', (req: Request, res: Response) => {
-    const cameraName = req.query.cameraName as string;
-    if (!cameraName) return res.status(400).json({ error: 'cameraName is required' });
-
-    if (recordingProcesses.has(cameraName)) {
-        return res.status(400).json({ error: `Recording already running for ${cameraName}` });
-    }
-
-    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
-    if (!fs.existsSync(cameraDir)) {
-        fs.mkdirSync(cameraDir, { recursive: true });
-    }
-    // Connects to your local MediaMTX container
-    const rtspUrl = `rtsp://${process.env.MEDIAMTX_IP || '127.0.0.1'}:8554/${cameraName}`;
-    const outputPattern = path.join(cameraDir, '%Y-%m-%d_%H-%M-%S.mp4');
-
-    const ffmpeg = spawn('ffmpeg', [
-        '-rtsp_transport', 'tcp',
-        '-i', rtspUrl,
-        '-c:v', 'copy',          // Copy video without re-encoding (low CPU usage)
-        '-c:a', 'copy',          // Copy audio if it exists
-        '-f', 'segment',         // Chunk the file
-        '-segment_time', '900',  // 15-minute chunks
-        '-reset_timestamps', '1',
-        '-strftime', '1',        // Name files with exact timestamp
-        outputPattern
-    ]);
-
-    recordingProcesses.set(cameraName, ffmpeg);
-
-    ffmpeg.stderr?.on('data', (data) => {
-        // Optional: log ffmpeg output for debugging
-        // console.log(`[FFmpeg ${cameraName}]: ${data.toString()}`);
-    });
-
-    ffmpeg.on('close', (code) => {
-        console.log(`Recording stopped for ${cameraName} (Code: ${code})`);
-        recordingProcesses.delete(cameraName);
-    });
-
-    return res.json({ message: `Recording started for ${cameraName}` });
-});
-
-/*
-  2. STOP RECORDING
-  Body: { cameraName: "camera1" }
- */
-app.post('/recordings/stop', (req: Request, res: Response) => {
-    const cameraName  = req.query.cameraName as string;
-    const ffmpegProcess = recordingProcesses.get(cameraName);
-
-    if (!ffmpegProcess) {
-        return res.status(400).json({ error: 'No active recording found' });
-    }
-
-    // SIGINT allows FFmpeg to safely finalize the MP4 file before closing
-    ffmpegProcess.kill('SIGINT');
-    recordingProcesses.delete(cameraName);
-
-    return res.json({ message: `Recording stopped for ${cameraName}` });
-});
-
-//=========================== Frontend->node_backend recordings quering ============================
-/*
-  1. GET LIST OF RECORDINGS
-  Example: GET /recordings/camera1
- */
-type singleCameraType={
-    cameraName:string
-}
-type singleCameraTypeWthFileNameType={
-    cameraName:string,
-    filename:string
-}
-
-app.get('/recordings/:cameraName', (req: Request, res: Response) => {
-    const { cameraName } = req.params as singleCameraType;
-    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
-
-    if (!fs.existsSync(cameraDir)) {
-        return res.json({ files: [] });
-    }
-
-    const files = fs.readdirSync(cameraDir)
-        .filter(file => file.endsWith('.mp4'))
-        .sort(); // Chronological order based on timestamp filenames
-
-    return res.json({ files });
-});
-
-/*
-  2. STREAM RECORDING (Supports Play, Pause, Seek natively)
-  Example: GET /recordings/stream/camera1/2026-04-28_12-00-00.mp4
- */
-app.get('/recordings/stream/:cameraName/:filename', (req: Request, res: Response) => {
-    const { cameraName, filename } = req.params as singleCameraTypeWthFileNameType;
-    const videoPath = path.join(RECORDINGS_BASE_DIR, cameraName, filename);
-
-    if (!fs.existsSync(videoPath)) {
-        return res.status(404).send('Video file not found');
-    }
-
-    const stat = fs.statSync(videoPath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-
-    if (range) {
-        // The browser is asking for a specific chunk (Seeking or continuing playback)
-        const parts = range.replace(/bytes=/, "").split("-");
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-        const chunksize = (end - start) + 1;
-        const file = fs.createReadStream(videoPath, { start, end });
-        
-        const head = {
-            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-            'Accept-Ranges': 'bytes',
-            'Content-Length': chunksize,
-            'Content-Type': 'video/mp4',
-        };
-
-        // 206 Partial Content is critical for pausing/seeking to work
-        res.writeHead(206, head);
-        file.pipe(res);
-    } else {
-        // Fallback if the browser doesn't send a Range header (rare for modern <video> tags)
-        const head = {
-            'Content-Length': fileSize,
-            'Content-Type': 'video/mp4',
-        };
-        res.writeHead(200, head);
-        fs.createReadStream(videoPath).pipe(res);
-    }
 });
