@@ -82,6 +82,12 @@ export async function addHostel(body: AddHostelBody) {
   // [express] post /add-hostel inputs:(hostel_name)
   return apiFetch<unknown>('/add-hostel', { method: 'POST', json: body })
 }
+export async function editHostel(body: { hostel_name: string; new_hostel_name: string }) {
+  return apiFetch<unknown>('/edit-hostel', { method: 'POST', json: body })
+}
+export async function deleteHostel(body: { hostel_name: string }) {
+  return apiFetch<unknown>('/delete-hostel', { method: 'POST', json: body })
+}
 
 // Cameras ↔ hostels (CamerasModel)
 export type CameraRow = { cameraName: string; hostelName: string }

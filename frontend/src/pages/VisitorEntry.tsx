@@ -8,6 +8,7 @@ export default function VisitorEntry() {
   const navigate = useNavigate()
   const [guestName, setGuestName] = useState('')
   const [guestContact, setGuestContact] = useState('')
+  const [extraFields, setExtraFields] = useState<{ key: string; value: string }[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
@@ -52,6 +53,11 @@ export default function VisitorEntry() {
     const body: InviteBody = {
       guest_name: guestName,
       guest_contact_number: guestContact,
+    }
+    for (const f of extraFields) {
+      const k = f.key.trim()
+      if (!k) continue
+      body[k] = f.value
     }
     try {
       const result = await invite(body)

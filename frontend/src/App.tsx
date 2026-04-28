@@ -1,5 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import {
   Landing,
   StudentSignIn,
@@ -14,6 +13,9 @@ import {
   PastRecordingPlayer,
   ManageList,
   ManageEdit,
+  ManageAddHostel,
+  ManageAddAdmin,
+  ManageAddStudent,
   ManageCameras,
   Notifications,
 } from './pages'
@@ -52,6 +54,9 @@ function App() {
         />
         <Route path="/admin/manage" element={<RequireAuth><ManageList /></RequireAuth>} />
         <Route path="/admin/manage/edit" element={<RequireAuth><ManageEdit /></RequireAuth>} />
+        <Route path="/admin/manage/add-hostel" element={<RequireAuth><ManageAddHostel /></RequireAuth>} />
+        <Route path="/admin/manage/add-admin" element={<RequireAuth><ManageAddAdmin /></RequireAuth>} />
+        <Route path="/admin/manage/add-student" element={<RequireAuth><ManageAddStudent /></RequireAuth>} />
         <Route path="/admin/cameras" element={<RequireAuth><ManageCameras /></RequireAuth>} />
         <Route path="/admin/notifications" element={<RequireAuth><Notifications /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/" replace />} />
