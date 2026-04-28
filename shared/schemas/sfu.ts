@@ -1,5 +1,4 @@
 import {z} from "zod"
-import { CustomSchemas } from "../index.js"
 
 export const getRtpCapabilitiesToBackendSchema=z.object({
     type:z.literal("get-rtp-capabilities")
@@ -51,7 +50,10 @@ export const transportRecvConnectToBackendSchema=z.object({
 export const sendDeviceRtpCapabilitiesToBackendSchema=z.object({
     type:z.literal("send-device-rtp-capabilities"),
     rtpCapabilities:z.any(),
-    allocatedHostel:z.string()
+    /** @deprecated Ignored when token is present; SFU resolves hostel from JWT + AdminModel */
+    allocatedHostel:z.string().optional(),
+    /** JWT from admin sign-in — required for hostel-scoped camera access */
+    token:z.string().optional(),
 })
 
 export const consumerResumeToBackendSchema=z.object({

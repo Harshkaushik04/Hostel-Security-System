@@ -1,6 +1,4 @@
 import {z} from "zod"
-import { CustomSchemas } from "../index.js"
-
 
 export const RightResponseSchema=z.object({
     approved:z.literal(true)

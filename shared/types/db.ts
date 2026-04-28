@@ -34,3 +34,10 @@ export type visitorsSchemaType={
 export type hostelsSchemaType={
     hostel_name:string
 }
+
+export type notificationsSchemaType={
+    hostelName:string,
+    message:string,
+    kind:'face_entry'|'visitor_qr',
+    cameraName?:string,
+}

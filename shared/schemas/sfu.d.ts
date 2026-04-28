@@ -47,7 +47,8 @@ export declare const transportRecvConnectToBackendSchema: z.ZodObject<{
 export declare const sendDeviceRtpCapabilitiesToBackendSchema: z.ZodObject<{
     type: z.ZodLiteral<"send-device-rtp-capabilities">;
     rtpCapabilities: z.ZodAny;
-    allocatedHostel: z.ZodString;
+    allocatedHostel: z.ZodOptional<z.ZodString>;
+    token: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export declare const consumerResumeToBackendSchema: z.ZodObject<{
     type: z.ZodLiteral<"consumer-resume">;
@@ -67,7 +68,8 @@ export declare const wsMessageToBackendSchema: z.ZodUnion<readonly [z.ZodObject<
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"send-device-rtp-capabilities">;
     rtpCapabilities: z.ZodAny;
-    allocatedHostel: z.ZodString;
+    allocatedHostel: z.ZodOptional<z.ZodString>;
+    token: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"consumer-resume">;
     cameraName: z.ZodString;
