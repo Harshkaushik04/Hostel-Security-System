@@ -49,9 +49,24 @@ const hostels= new mongoose.Schema<CustomTypes.db.hostelsSchemaType>({
     hostel_name:String
 })
 
+const notifications = new mongoose.Schema<CustomTypes.db.notificationsSchemaType>(
+    {
+        hostelName: { type: String, required: true, index: true },
+        message: { type: String, required: true },
+        kind: {
+            type: String,
+            required: true,
+            enum: ["face_entry", "visitor_qr"],
+        },
+        cameraName: { type: String },
+    },
+    { timestamps: true }
+)
+
 export const UserModel=mongoose.model("users",users)
 export const AdminModel=mongoose.model("admin",admin)
 export const EmergencyModel=mongoose.model("emergencies",emergencies)
 export const CamerasModel=mongoose.model("cameras",cameras)
 export const VisitorsModel=mongoose.model("visitors",visitors)
 export const HostelsModel=mongoose.model("hostels",hostels)
+export const NotificationsModel=mongoose.model("notifications",notifications)

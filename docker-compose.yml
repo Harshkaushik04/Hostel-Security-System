@@ -2,7 +2,7 @@ services:
   mongodb:
     image: mongo:latest
     volumes:
-      -~/mongodb-data
+      - ~/mongodb-data
   mediamtx_server:
     build:
       context: ./
@@ -10,6 +10,7 @@ services:
     environment:
       - SFU_HOST=dep_sfu_server
       - FASTAPI_HOST=dep_fastapi_server
+      - NODE_HOST=dep_node_backend
     ports:
       - '8000:8000'
       - '8001:8001'
@@ -45,7 +46,7 @@ services:
     ports:
       - '3000:3000'
     depends_on:
-      - mongo
+      - mongodb
       - fastapi_server
   frontend:
     build:

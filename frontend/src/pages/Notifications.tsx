@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useNotificationsWebSocket } from '../hooks/useNotificationsWebSocket'
 import { fetchPreviousNotifications } from '../api/endpoints'
+import { NotificationCard } from '../components/NotificationCard'
 import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, secondaryButton, logoCircle } from '../styles/common'
 
@@ -13,13 +14,15 @@ export default function Notifications() {
 
   const loadPrevious = async () => {
     setLoading(true)
-    // try {
-    //   const res = await fetchPreviousNotifications({ k })
-    //   const list = Array.isArray(res) ? res : (res as { notifications?: unknown[] })?.notifications ?? []
-    //   setPrevious(list)
-    // } finally {
-    //   setLoading(false)
-    // }
+    try {
+      const res = await fetchPreviousNotifications({ k })
+      const list = Array.isArray(res)
+        ? res
+        : (res as { notifications?: unknown[] })?.notifications ?? []
+      setPrevious(list)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -44,7 +47,7 @@ export default function Notifications() {
             <Link to="/admin" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back to Admin</Link>
             <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>Notifications</h1>
             <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>
-              People entering (own or visitor). WebSocket (port 5000) + [express] /fetch-previous-notifications (previous k).
+              People entering (own or visitor). WebSocket (port 3000) + POST /fetch-previous-notifications (previous k).
             </p>
             <p style={{ marginBottom: '1rem' }}>
               WebSocket:{' '}
@@ -68,22 +71,18 @@ export default function Notifications() {
                 Fetch previous k notifications
               </button>
             </div>
-            <div style={{ maxHeight: 400, overflow: 'auto' }}>
+            <div style={{ maxHeight: 480, overflow: 'auto' }}>
               {all.length === 0 && !loading && <p style={{ color: '#9ca3af' }}>No notifications yet.</p>}
-              {all.map((msg, i) => (
-                <pre
-                  key={i}
-                  style={{
-                    background: 'rgba(0,0,0,0.3)',
-                    padding: '0.5rem',
-                    borderRadius: 8,
-                    marginBottom: '0.5rem',
-                    fontSize: '0.85rem',
-                  }}
-                >
-                  {JSON.stringify(msg, null, 2)}
-                </pre>
-              ))}
+              {all.map((msg, i) => {
+                const key =
+                  typeof msg === 'object' &&
+                  msg !== null &&
+                  '_id' in msg &&
+                  (msg as { _id?: unknown })._id != null
+                    ? String((msg as { _id: unknown })._id)
+                    : `n-${i}-${typeof msg === 'object' && msg !== null && 'message' in msg ? String((msg as { message?: unknown }).message).slice(0, 24) : ''}`
+                return <NotificationCard key={key} item={msg} />
+              })}
             </div>
           </div>
 

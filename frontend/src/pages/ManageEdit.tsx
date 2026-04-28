@@ -1,16 +1,10 @@
-import { useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { addManually, editUser, deleteUser, uploadCsv, type AdminPrivilegeApiValue } from '../api/endpoints'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { addManually, editUser, deleteUser, uploadStudentCsv, uploadAdminCsv, type AdminPrivilegeApiValue } from '../api/endpoints'
 import { layout, card, primaryButton, secondaryButton, inputStyle } from '../styles/common'
 
 export default function ManageEdit() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const initialType = useMemo(() => {
-    const t = (searchParams.get('type') ?? '').toLowerCase()
-    return t === 'admin' ? 'admin' : 'student'
-  }, [searchParams])
-  const [userType, setUserType] = useState<'student' | 'admin'>(initialType)
-
+  const [entityType, setEntityType] = useState<'student' | 'admin'>('student')
   const [addName, setAddName] = useState('')
   const [addEmail, setAddEmail] = useState('')
   const [addPassword, setAddPassword] = useState('')
@@ -39,6 +33,21 @@ export default function ManageEdit() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    setEditTarget(null)
+    setDeleteTarget(null)
+    setEditFilterValue('')
+    setDeleteFilterValue('')
+    setEditResult('')
+    setDeleteResult('')
+    if (entityType === 'admin') {
+      setEditFilterBy('email')
+      setDeleteFilterBy('email')
+    }
+    setCsvFile(null)
+    setCsvResult('')
+  }, [entityType])
+
   const resolveBackendError = (res: unknown): string => {
     if (!res || typeof res !== 'object') return ''
     const maybeError = (res as { error?: unknown }).error
@@ -53,39 +62,37 @@ export default function ManageEdit() {
   const handleAddManually = async () => {
     setError('')
     setAddResult('')
+    if (!addName.trim() || !addEmail.trim() || !addPassword.trim()) {
+      setError('Fill required add fields before submitting.')
+      return
+    }
+    if (entityType === 'student' && (!addEntryNumber.trim() || !addHostelName.trim())) {
+      setError('Student add requires entry number and hostel name.')
+      return
+    }
+    if (entityType === 'admin' && !addAllocatedHostel.trim()) {
+      setError('Admin add requires allocated hostel.')
+      return
+    }
     setLoading(true)
     try {
-      const body =
-        userType === 'student'
-          ? ({
-              type: 'student',
-              name: addName.trim(),
-              email: addEmail.trim(),
-              password: addPassword,
-              entry_number: addEntryNumber.trim(),
-              hostel_name: addHostelName.trim(),
-            } as const)
-          : ({
-              type: 'admin',
-              name: addName.trim(),
-              email: addEmail.trim(),
-              password: addPassword,
-              privelege: addPrivilege,
-              allocatedHostel: addAllocatedHostel.trim(),
-            } as const)
-
-      if (userType === 'student') {
-        if (!body.name || !body.email || !body.password || !body.entry_number || !body.hostel_name) {
-          setError('Fill all add-student fields before submitting.')
-          return
-        }
-      } else {
-        if (!body.name || !body.email || !body.password || !body.privelege || !body.allocatedHostel) {
-          setError('Fill all add-admin fields before submitting.')
-          return
-        }
-      }
-
+      const body = entityType === 'student'
+        ? {
+            type: 'student',
+            name: addName.trim(),
+            email: addEmail.trim(),
+            password: addPassword,
+            entry_number: addEntryNumber.trim(),
+            hostel_name: addHostelName.trim(),
+          }
+        : {
+            type: 'admin',
+            name: addName.trim(),
+            email: addEmail.trim(),
+            password: addPassword,
+            privelege: addPrivilege,
+            allocatedHostel: addAllocatedHostel.trim(),
+          }
       const res = await addManually(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -97,7 +104,6 @@ export default function ManageEdit() {
         setAddPassword('')
         setAddEntryNumber('')
         setAddHostelName('')
-        setAddPrivilege('gaurd')
         setAddAllocatedHostel('')
       }
     } catch (e) {
@@ -114,51 +120,45 @@ export default function ManageEdit() {
       setError('First choose a filter and click "Filter" in Edit section.')
       return
     }
+    if (!editName.trim() || !editEmail.trim() || !editPassword.trim()) {
+      setError('Fill required edit fields before submitting.')
+      return
+    }
+    if (entityType === 'student' && (!editEntryNumber.trim() || !editHostelName.trim())) {
+      setError('Student edit requires entry number and hostel name.')
+      return
+    }
+    if (entityType === 'admin' && !editAllocatedHostel.trim()) {
+      setError('Admin edit requires allocated hostel.')
+      return
+    }
     setLoading(true)
     try {
-      const body =
-        userType === 'student'
-          ? ({
-              type: 'student',
-              filterBy: editTarget.filterBy,
-              value: editTarget.value,
-              changed: {
-                name: editName.trim(),
-                email: editEmail.trim(),
-                password: editPassword,
-                entry_number: editEntryNumber.trim(),
-                hostel_name: editHostelName.trim(),
-              },
-            } as const)
-          : ({
-              type: 'admin',
-              filterBy: 'email',
-              value: editTarget.value,
-              changed: {
-                name: editName.trim(),
-                email: editEmail.trim(),
-                password: editPassword,
-                privelege: editPrivilege,
-                allocatedHostel: editAllocatedHostel.trim(),
-              },
-            } as const)
-
-      if (!body.changed.name || !body.changed.email || !body.changed.password) {
-        setError('Fill all edit fields before submitting.')
-        return
-      }
-      if (userType === 'student') {
-        if (!body.changed.entry_number || !body.changed.hostel_name) {
-          setError('Fill all edit-student fields before submitting.')
-          return
-        }
-      } else {
-        if (!body.changed.privelege || !body.changed.allocatedHostel) {
-          setError('Fill all edit-admin fields before submitting.')
-          return
-        }
-      }
-
+      const body = entityType === 'student'
+        ? {
+            type: 'student',
+            filterBy: editTarget.filterBy,
+            value: editTarget.value,
+            changed: {
+              name: editName.trim(),
+              email: editEmail.trim(),
+              password: editPassword,
+              entry_number: editEntryNumber.trim(),
+              hostel_name: editHostelName.trim(),
+            },
+          }
+        : {
+            type: 'admin',
+            filterBy: 'email',
+            value: editTarget.value,
+            changed: {
+              name: editName.trim(),
+              email: editEmail.trim(),
+              password: editPassword,
+              privelege: editPrivilege,
+              allocatedHostel: editAllocatedHostel.trim(),
+            },
+          }
       const res = await editUser(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -182,18 +182,17 @@ export default function ManageEdit() {
     }
     setLoading(true)
     try {
-      const body =
-        userType === 'student'
-          ? ({
-              type: 'student',
-              filterBy: deleteTarget.filterBy,
-              value: deleteTarget.value,
-            } as const)
-          : ({
-              type: 'admin',
-              filterBy: 'email',
-              value: deleteTarget.value,
-            } as const)
+      const body = entityType === 'student'
+        ? {
+            type: 'student',
+            filterBy: deleteTarget.filterBy,
+            value: deleteTarget.value,
+          }
+        : {
+            type: 'admin',
+            filterBy: 'email',
+            value: deleteTarget.value,
+          }
       const res = await deleteUser(body)
       const backendError = resolveBackendError(res)
       if (backendError) {
@@ -216,7 +215,7 @@ export default function ManageEdit() {
       setError('Enter email or entry number for Edit filter.')
       return
     }
-    setEditTarget({ filterBy: userType === 'admin' ? 'email' : editFilterBy, value })
+    setEditTarget({ filterBy: entityType === 'admin' ? 'email' : editFilterBy, value })
   }
 
   const applyDeleteFilter = () => {
@@ -227,22 +226,7 @@ export default function ManageEdit() {
       setError('Enter email or entry number for Delete filter.')
       return
     }
-    setDeleteTarget({ filterBy: userType === 'admin' ? 'email' : deleteFilterBy, value })
-  }
-
-  const onChangeUserType = (next: 'student' | 'admin') => {
-    setUserType(next)
-    setSearchParams((prev) => {
-      const p = new URLSearchParams(prev)
-      p.set('type', next)
-      return p
-    })
-    setError('')
-    setAddResult('')
-    setEditResult('')
-    setDeleteResult('')
-    setEditTarget(null)
-    setDeleteTarget(null)
+    setDeleteTarget({ filterBy: entityType === 'admin' ? 'email' : deleteFilterBy, value })
   }
 
   const handleUploadCsv = async () => {
@@ -253,12 +237,14 @@ export default function ManageEdit() {
     try {
       const form = new FormData()
       form.append('file', csvFile)
-      const res = await uploadCsv(form)
+      const res = entityType === 'student'
+        ? await uploadStudentCsv(form)
+        : await uploadAdminCsv(form)
       const backendError = resolveBackendError(res)
       if (backendError) {
         setError(backendError)
       } else {
-        setCsvResult(JSON.stringify(res))
+        setCsvResult(JSON.stringify(res, null, 2))
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload failed')
@@ -288,12 +274,23 @@ export default function ManageEdit() {
         {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
         <div style={{ display: 'grid', gap: '1.5rem' }}>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Add {userType === 'admin' ? 'admin' : 'student'}</h2>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Target type</h2>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+              <button type="button" style={entityType === 'student' ? primaryButton : secondaryButton} onClick={() => setEntityType('student')}>
+                Student
+              </button>
+              <button type="button" style={entityType === 'admin' ? primaryButton : secondaryButton} onClick={() => setEntityType('admin')}>
+                Admin
+              </button>
+            </div>
+          </section>
+          <section>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Add {entityType}</h2>
             <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <input type="text" style={inputStyle} placeholder="Name" value={addName} onChange={(e) => setAddName(e.target.value)} />
               <input type="email" style={inputStyle} placeholder="Email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} />
-              <input type="text" style={inputStyle} placeholder="Password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} />
-              {userType === 'student' ? (
+              <input type="password" style={inputStyle} placeholder="Password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} />
+              {entityType === 'student' ? (
                 <>
                   <input type="text" style={inputStyle} placeholder="Entry number" value={addEntryNumber} onChange={(e) => setAddEntryNumber(e.target.value)} />
                   <input type="text" style={inputStyle} placeholder="Hostel name" value={addHostelName} onChange={(e) => setAddHostelName(e.target.value)} />
@@ -301,17 +298,11 @@ export default function ManageEdit() {
               ) : (
                 <>
                   <select value={addPrivilege} onChange={(e) => setAddPrivilege(e.target.value as AdminPrivilegeApiValue)} style={inputStyle}>
-                    <option value="gaurd">Guard</option>
-                    <option value="top_privelege">Top privilege</option>
-                    <option value="super_user">Super user</option>
+                    <option value="gaurd">gaurd</option>
+                    <option value="top_privelege">top_privelege</option>
+                    <option value="super_user">super_user</option>
                   </select>
-                  <input
-                    type="text"
-                    style={inputStyle}
-                    placeholder="Allocated hostel"
-                    value={addAllocatedHostel}
-                    onChange={(e) => setAddAllocatedHostel(e.target.value)}
-                  />
+                  <input type="text" style={inputStyle} placeholder="Allocated hostel" value={addAllocatedHostel} onChange={(e) => setAddAllocatedHostel(e.target.value)} />
                 </>
               )}
             </div>
@@ -319,9 +310,9 @@ export default function ManageEdit() {
             {addResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{addResult}</pre>}
           </section>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Edit {userType === 'admin' ? 'admin' : 'student'}</h2>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Edit {entityType}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
-              {userType === 'student' ? (
+              {entityType === 'student' ? (
                 <select
                   value={editFilterBy}
                   onChange={(e) => setEditFilterBy(e.target.value as 'email' | 'entry_number')}
@@ -331,12 +322,12 @@ export default function ManageEdit() {
                   <option value="entry_number">Filter by entry number</option>
                 </select>
               ) : (
-                <span style={{ color: '#e5e7eb', fontSize: '0.9rem' }}>Filter by email</span>
+                <span style={{ color: '#9ca3af' }}>Filter by email</span>
               )}
               <input
                 type="text"
                 style={{ ...inputStyle, maxWidth: 280 }}
-                placeholder={userType === 'admin' || editFilterBy === 'email' ? 'email@example.com' : 'Entry number'}
+                placeholder={entityType === 'student' ? (editFilterBy === 'email' ? 'student@email.com' : 'Entry number') : 'admin@email.com'}
                 value={editFilterValue}
                 onChange={(e) => setEditFilterValue(e.target.value)}
               />
@@ -350,8 +341,8 @@ export default function ManageEdit() {
             <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <input type="text" style={inputStyle} placeholder="New name" value={editName} onChange={(e) => setEditName(e.target.value)} />
               <input type="email" style={inputStyle} placeholder="New email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
-              <input type="text" style={inputStyle} placeholder="New password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} />
-              {userType === 'student' ? (
+              <input type="password" style={inputStyle} placeholder="New password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} />
+              {entityType === 'student' ? (
                 <>
                   <input type="text" style={inputStyle} placeholder="New entry number" value={editEntryNumber} onChange={(e) => setEditEntryNumber(e.target.value)} />
                   <input type="text" style={inputStyle} placeholder="New hostel name" value={editHostelName} onChange={(e) => setEditHostelName(e.target.value)} />
@@ -359,17 +350,11 @@ export default function ManageEdit() {
               ) : (
                 <>
                   <select value={editPrivilege} onChange={(e) => setEditPrivilege(e.target.value as AdminPrivilegeApiValue)} style={inputStyle}>
-                    <option value="gaurd">Guard</option>
-                    <option value="top_privelege">Top privilege</option>
-                    <option value="super_user">Super user</option>
+                    <option value="gaurd">gaurd</option>
+                    <option value="top_privelege">top_privelege</option>
+                    <option value="super_user">super_user</option>
                   </select>
-                  <input
-                    type="text"
-                    style={inputStyle}
-                    placeholder="Allocated hostel"
-                    value={editAllocatedHostel}
-                    onChange={(e) => setEditAllocatedHostel(e.target.value)}
-                  />
+                  <input type="text" style={inputStyle} placeholder="Allocated hostel" value={editAllocatedHostel} onChange={(e) => setEditAllocatedHostel(e.target.value)} />
                 </>
               )}
             </div>
@@ -377,9 +362,9 @@ export default function ManageEdit() {
             {editResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{editResult}</pre>}
           </section>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Delete {userType === 'admin' ? 'admin' : 'student'}</h2>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Delete {entityType}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
-              {userType === 'student' ? (
+              {entityType === 'student' ? (
                 <select
                   value={deleteFilterBy}
                   onChange={(e) => setDeleteFilterBy(e.target.value as 'email' | 'entry_number')}
@@ -389,12 +374,12 @@ export default function ManageEdit() {
                   <option value="entry_number">Filter by entry number</option>
                 </select>
               ) : (
-                <span style={{ color: '#e5e7eb', fontSize: '0.9rem' }}>Filter by email</span>
+                <span style={{ color: '#9ca3af' }}>Filter by email</span>
               )}
               <input
                 type="text"
                 style={{ ...inputStyle, maxWidth: 280 }}
-                placeholder={userType === 'admin' || deleteFilterBy === 'email' ? 'email@example.com' : 'Entry number'}
+                placeholder={entityType === 'student' ? (deleteFilterBy === 'email' ? 'student@email.com' : 'Entry number') : 'admin@email.com'}
                 value={deleteFilterValue}
                 onChange={(e) => setDeleteFilterValue(e.target.value)}
               />
@@ -409,10 +394,19 @@ export default function ManageEdit() {
             {deleteResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{deleteResult}</pre>}
           </section>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Upload CSV</h2>
-            <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)} style={{ color: '#e5e7eb' }} />
-            <button type="button" style={primaryButton} onClick={handleUploadCsv} disabled={loading || !csvFile}>Upload CSV</button>
-            {csvResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8 }}>{csvResult}</pre>}
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>
+              Upload CSV ({entityType === 'student' ? 'students' : 'admins'})
+            </h2>
+            <p style={{ fontSize: '0.9rem', color: '#9ca3af', marginBottom: '0.75rem' }}>
+              {entityType === 'student'
+                ? 'Header row required: name, email, password, entry_number, hostel_name'
+                : 'Header row required: name, email, password, privelege, allocated_hostel (privelege: super_user | top_privelege | gaurd)'}
+            </p>
+            <input type="file" accept=".csv,text/csv" onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)} style={{ color: '#e5e7eb' }} />
+            <button type="button" style={primaryButton} onClick={handleUploadCsv} disabled={loading || !csvFile}>
+              {entityType === 'student' ? 'Upload student CSV' : 'Upload admin CSV'}
+            </button>
+            {csvResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8, overflow: 'auto' }}>{csvResult}</pre>}
           </section>
         </div>
       </div>

@@ -12,7 +12,8 @@ import axios from 'axios';
 import "dotenv/config"
 import dotenv from "dotenv"
 import type { CursorPos } from 'readline';
-import { CamerasModel } from './db.js';
+import jwt from 'jsonwebtoken';
+import { CamerasModel, AdminModel } from './db.js';
 import path from "path"
 import mongoose from "mongoose"
 import { fileURLToPath } from 'url';
@@ -35,6 +36,38 @@ mongoose.connect(MONGO_URL as string)
     console.error("Database connection failed:", err.message);
     process.exit(1); // Kill the Node server immediately if DB is unreachable
 });
+
+const _jwtSecret = process.env.JWT_SECRET;
+if (!_jwtSecret) {
+    throw new Error("JWT_SECRET not present in .env (must match Node backend)");
+}
+/** Same signing secret as the Node backend admin JWT */
+const JWT_SECRET: string = _jwtSecret;
+
+async function resolveAllocatedHostelFromToken(token: string | undefined): Promise<
+    { allocatedHostel: string } | { error: string }
+> {
+    if (!token?.trim()) {
+        return { error: "authentication required: pass token from admin sign-in with send-device-rtp-capabilities" };
+    }
+    try {
+        const decoded = jwt.verify(token.trim(), JWT_SECRET) as jwt.JwtPayload & { email?: string };
+        const email = decoded.email;
+        if (!email) return { error: "invalid token payload" };
+        const admin = await AdminModel.findOne({ email });
+        if (!admin) return { error: "admin not found" };
+        return { allocatedHostel: admin.allocatedHostel as string };
+    } catch {
+        return { error: "invalid token" };
+    }
+}
+
+async function cameraAllowedForHostel(cameraName: string, allocatedHostel: string): Promise<boolean> {
+    const row = await CamerasModel.findOne({ cameraName });
+    if (!row) return false;
+    if (allocatedHostel === "all") return true;
+    return row.hostelName === allocatedHostel;
+}
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -215,18 +248,11 @@ async function run() {
                         return;
                     }
                     if(!allocatedHostel){
-                        console.log("allocatedHostel is undefined");
-                        return;
-                    }
-                    const proposedCamera=await CamerasModel.findOne({
-                        hostelName:allocatedHostel
-                    })
-                    if(!proposedCamera){
-                        console.log(`no camera corrosponding to allocatedHostel-${allocatedHostel}`)
+                        console.log("allocatedHostel is undefined — finish WebRTC setup with JWT (send-device-rtp-capabilities)");
                         continue;
                     }
-                    if(proposedCamera.cameraName!=cameraName){
-                        console.log(`allocated hostel:${allocatedHostel} doesnt have rights over camera:${cameraName}`) 
+                    if(!(await cameraAllowedForHostel(cameraName, allocatedHostel))){
+                        console.log(`skip invitation: camera ${cameraName} not allowed for allocation ${allocatedHostel}`)
                         continue;
                     }
                     let consumer = await consumerTransport.consume({
@@ -386,20 +412,19 @@ async function run() {
                         return;
                     }
                     const rtpCapabilities:mediasoup.types.RtpCapabilities=json_message.rtpCapabilities;
-                    const allocatedHostel:string=json_message.allocatedHostel
-                    let cameras=await CamerasModel.find({
-                        hostelName:allocatedHostel
-                    })
+                    const resolved = await resolveAllocatedHostelFromToken(json_message.token);
+                    if("error" in resolved){
+                        const err_message:CustomTypes.sfu.errMessageType={
+                            type:"error",
+                            error:resolved.error
+                        }
+                        ws.send(JSON.stringify(err_message));
+                        return;
+                    }
+                    const allocatedHostel:string=resolved.allocatedHostel
                     for(const [cameraName,streamDetails] of streamRegistry){
-                        let flag=false;
-                        if(allocatedHostel!="all"){
-                            for(let cameraRow of cameras){
-                                if(cameraRow.cameraName==cameraName){
-                                    flag=true;
-                                    break;
-                                }
-                            }
-                            if(!flag) continue;
+                        if(!(await cameraAllowedForHostel(cameraName, allocatedHostel))){
+                            continue;
                         }
                         const {ffmpeg,
                             producer,
@@ -473,6 +498,11 @@ async function run() {
                     let clientDetails:CustomTypes.sfu.clientDetailsType|undefined=clients.get(ws);
                     if(!clientDetails){
                         console.log("clientDetails is undefined");
+                        return;
+                    }
+                    const alloc = clientDetails.allocatedHostel;
+                    if(!alloc || !(await cameraAllowedForHostel(cameraName, alloc))){
+                        console.log("consumer-resume denied: hostel/camera mismatch");
                         return;
                     }
                     let mpp:Map<string,mediasoup.types.Consumer>=clientDetails.consumers;

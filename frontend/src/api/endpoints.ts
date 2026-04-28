@@ -1,7 +1,7 @@
 /**
  * Express API endpoints (backend port 3000)
  */
-import { apiFetch } from './client'
+import { apiFetch, API_BASE } from './client'
 
 // Auth
 export type SignInBody = { email: string; password: string }
@@ -27,6 +27,9 @@ export type InviteBody = {
 export type InviteResponse = {
   approved?: boolean
   error?: string
+  message?: string
+  /** Data URL PNG from server (includes host_email, hostel, invite_id) */
+  qrCode?: string
 }
 export async function invite(body: InviteBody) {
   return apiFetch<InviteResponse>('/invite', { method: 'POST', json: body })
@@ -37,9 +40,10 @@ export async function fetchEmergencies() {
   return apiFetch<unknown>('/emergencies', { method: 'GET' })
 }
 
-// Past recordings
-export async function getPastRecording(params: Record<string, string>) {
-  return apiFetch<unknown>('/get-past-recording', { method: 'POST', json: params })
+// Past recordings (Node backend: GET /recordings/:cameraName → { files: string[] })
+export async function listRecordings(cameraName: string) {
+  const q = encodeURIComponent(cameraName.trim())
+  return apiFetch<{ files: string[] }>(`/recordings/${q}`, { method: 'GET' })
 }
 
 // Manage: hostels & admin list
@@ -79,6 +83,32 @@ export async function addHostel(body: AddHostelBody) {
   return apiFetch<unknown>('/add-hostel', { method: 'POST', json: body })
 }
 
+// Cameras ↔ hostels (CamerasModel)
+export type CameraRow = { cameraName: string; hostelName: string }
+
+export async function getCamerasList() {
+  return apiFetch<{ cameras: CameraRow[] } | { error: string }>('/get-cameras-list', {
+    method: 'POST',
+    json: {},
+  })
+}
+
+export async function addCamera(body: CameraRow) {
+  return apiFetch<unknown>('/add-camera', { method: 'POST', json: body })
+}
+
+export async function editCamera(body: {
+  cameraName: string
+  hostelName: string
+  newCameraName?: string
+}) {
+  return apiFetch<unknown>('/edit-camera', { method: 'POST', json: body })
+}
+
+export async function deleteCamera(body: { cameraName: string }) {
+  return apiFetch<unknown>('/delete-camera', { method: 'POST', json: body })
+}
+
 // Manage: add/delete/edit users
 export async function addManually(body: Record<string, unknown>) {
   return apiFetch<unknown>('/upload-manually', { method: 'POST', json: body })
@@ -89,14 +119,43 @@ export async function editUser(body: Record<string, unknown>) {
 export async function deleteUser(body: Record<string, unknown>) {
   return apiFetch<unknown>('/delete', { method: 'POST', json: body })
 }
-export async function uploadCsv(body: FormData) {
-  const API_BASE = `http://${import.meta.env.VITE_BACKEND_IP}:3000`
-  const res = await fetch(`${API_BASE}/upload-csv`, {
+export type CsvUploadSummary = {
+  approved?: boolean
+  created?: number
+  skipped?: number
+  rowErrors?: { row: number; message: string }[]
+  error?: string
+}
+
+/** CSV columns: name,email,password,entry_number,hostel_name */
+export async function uploadStudentCsv(form: FormData) {
+  return uploadMultipart('/upload-student-csv', form)
+}
+
+/** CSV columns: name,email,password,privelege,allocated_hostel */
+export async function uploadAdminCsv(form: FormData) {
+  return uploadMultipart('/upload-admin-csv', form)
+}
+
+async function uploadMultipart(path: string, form: FormData): Promise<CsvUploadSummary> {
+  const headers: HeadersInit = {}
+  if (typeof window !== 'undefined') {
+    const token = window.localStorage.getItem('token')
+    if (token) {
+      ;(headers as Record<string, string>).token = token
+    }
+  }
+  const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    body,
+    body: form,
+    headers,
   })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
+  const data = (await res.json().catch(() => ({}))) as CsvUploadSummary
+  if (!res.ok) {
+    const msg = typeof data.error === 'string' ? data.error : await res.text().catch(() => res.statusText)
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+  return data
 }
 
 // Notifications (previous k)
