@@ -23,17 +23,17 @@ function clampCameraSlots(n: number): number {
 export default function LiveFeed() {
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
-  
+
   /** How many camera tiles to show (camera1 … cameraN). */
   const [maxCameraSlots, setMaxCameraSlots] = useState(DEFAULT_CAMERA_SLOTS)
   const maxCameraSlotsRef = useRef(DEFAULT_CAMERA_SLOTS)
-  
+
   const [focusCameraInput, setFocusCameraInput] = useState('')
   const [focusHint, setFocusHint] = useState('')
   const [connected, setConnected] = useState(false)
   const [buttonPressed, setButtonPressed] = useState(false)
   const [error, setError] = useState('')
-  
+
   const sfuWsRef = useRef<WebSocket | null>(null)
   const deviceRef = useRef<Device | null>(null)
   const recvTransportRef = useRef<any>(null)
@@ -67,7 +67,7 @@ export default function LiveFeed() {
     const video = videoRefsRef.current.get(id)
     if (video && stream) {
       video.srcObject = stream
-      video.play().catch(() => {})
+      video.play().catch(() => { })
     }
   }, [])
 
@@ -435,7 +435,7 @@ export default function LiveFeed() {
                     if (el) {
                       videoRefsRef.current.set(item.id, el)
                       el.srcObject = item.stream
-                      el.play().catch(() => {})
+                      el.play().catch(() => { })
                     }
                   }}
                   onDoubleClick={(e) => {

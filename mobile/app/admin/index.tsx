@@ -15,7 +15,7 @@ export default function AdminLanding() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Admin Console</Text>
-            <Text style={styles.subtitle}>Choose an option below.</Text>
+            <Text style={styles.subtitle}></Text>
           </View>
           <Pressable style={styles.buttonSecondary} onPress={logout}>
             <Text style={styles.buttonTextSecondary}>LOGOUT</Text>

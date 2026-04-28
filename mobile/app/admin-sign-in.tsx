@@ -34,7 +34,7 @@ export default function AdminSignIn() {
       <View style={styles.card}>
         <Text style={styles.title}>Admin Sign In</Text>
         <Text style={styles.subtitle}>
-          Restricted access. No sign up — only super user can add users.
+          Restricted access.
         </Text>
 
         <Text style={styles.label}>Email</Text>

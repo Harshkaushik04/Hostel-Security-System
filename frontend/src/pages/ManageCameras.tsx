@@ -7,7 +7,7 @@ import {
   editCamera,
   deleteCamera,
 } from '../api/endpoints'
-import { layout, card, primaryButton, secondaryButton, inputStyle, logoCircle } from '../styles/common'
+import { layout, card, primaryButton, secondaryButton, inputStyle, logoCircle, brandMark } from '../styles/common'
 import collegeLogo from '../assets/IIT Ropar.png'
 
 type CameraRow = { cameraName: string; hostelName: string }
@@ -162,20 +162,39 @@ export default function ManageCameras() {
 
   return (
     <div style={layout}>
-      <div style={card}>
+      <div
+        style={{
+          ...card,
+          minHeight: '90vh',
+          position: 'relative',
+        }}
+      >
+        <Link 
+          to="/admin/manage" 
+          style={{ 
+            ...secondaryButton, 
+            textDecoration: 'none',
+            position: 'absolute',
+            top: '1.5rem',
+            right: '2rem',
+          }}
+        >
+          ← Back
+        </Link>
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 0.7fr)',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
             columnGap: '3rem',
             alignItems: 'flex-start',
+            width: '100%',
+            minHeight: '74vh',
+            paddingTop: '2rem',
           }}
         >
           <div>
-            <Link to="/admin" style={{ ...secondaryButton, textDecoration: 'none' }}>
-              ← Back to Admin
-            </Link>
-            <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>
+            <div style={{ ...brandMark, marginBottom: '3rem' }}>HOSTEL SECURITY</div>
+            <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>
               Cameras & hostels
             </h1>
             <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>

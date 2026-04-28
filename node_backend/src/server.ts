@@ -20,6 +20,7 @@ import https from "https"
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 
+
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
 });
@@ -261,7 +262,10 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
 })
 
 //=========================== MediaMTX->node_backend recordings save ============================
-const RECORDINGS_BASE_DIR = "D:\\Documents_D\\HOMEWORK\\6th_sem\\DEP\\recordings";
+const RECORDINGS_BASE_DIR = process.env.RECORDING_SAVE_PATH;
+if(!RECORDINGS_BASE_DIR){
+    throw new Error("RECORDING_SAVE_PATH not present in .env")
+}
 const recordingProcesses = new Map<string, ChildProcess>();
 
 // Make sure base directory exists

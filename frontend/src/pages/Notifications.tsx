@@ -4,7 +4,7 @@ import { useNotificationsWebSocket } from '../hooks/useNotificationsWebSocket'
 import { fetchPreviousNotifications } from '../api/endpoints'
 import { NotificationCard } from '../components/NotificationCard'
 import collegeLogo from '../assets/IIT Ropar.png'
-import { layout, card, secondaryButton, logoCircle } from '../styles/common'
+import { layout, card, secondaryButton, logoCircle, brandMark } from '../styles/common'
 
 export default function Notifications() {
   const { messages, connected } = useNotificationsWebSocket()
@@ -33,19 +33,40 @@ export default function Notifications() {
 
   return (
     <div style={layout}>
-      <div style={card}>
+      <div
+        style={{
+          ...card,
+          minHeight: '90vh',
+          position: 'relative',
+        }}
+      >
+        <Link 
+          to="/admin" 
+          style={{ 
+            ...secondaryButton, 
+            textDecoration: 'none',
+            position: 'absolute',
+            top: '1.5rem',
+            right: '2rem',
+          }}
+        >
+          ← Back
+        </Link>
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 0.7fr)',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
             columnGap: '3rem',
             alignItems: 'flex-start',
+            width: '100%',
+            minHeight: '74vh',
+            paddingTop: '2rem',
           }}
         >
           {/* Left: text + buttons */}
           <div>
-            <Link to="/admin" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back to Admin</Link>
-            <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>Notifications</h1>
+            <div style={{ ...brandMark, marginBottom: '3rem' }}>HOSTEL SECURITY</div>
+            <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>Notifications</h1>
             <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>
               People entering (own or visitor). WebSocket (port 3000) + POST /fetch-previous-notifications (previous k).
             </p>
