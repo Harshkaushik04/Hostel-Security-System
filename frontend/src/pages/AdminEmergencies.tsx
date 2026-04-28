@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { fetchEmergencies } from '../api/endpoints'
+import { EmergencyInfoDisplay } from '../components/EmergencyInfoDisplay'
 import { layout, card, secondaryButton } from '../styles/common'
 
 export default function AdminEmergencies() {
-  const navigate = useNavigate()
   const [data, setData] = useState<unknown>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -26,11 +26,7 @@ export default function AdminEmergencies() {
         <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>Admin view. [express] /emergencies</p>
         {loading && <p style={{ color: '#9ca3af' }}>Loading…</p>}
         {error && <p style={{ color: '#f87171' }}>{error}</p>}
-        {!loading && !error && data !== null && (
-          <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: 8, overflow: 'auto' }}>
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        )}
+        {!loading && !error && data !== null && <EmergencyInfoDisplay data={data} />}
       </div>
     </div>
   )

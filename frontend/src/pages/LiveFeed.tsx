@@ -4,8 +4,6 @@ import { Device } from 'mediasoup-client'
 import { CustomSchemas, CustomTypes } from '@my-app/shared'
 import { layout, card, secondaryButton, primaryButton, inputStyle } from '../styles/common'
 
-type ViewFilter = 'all' | 'hostel-a' | 'hostel-b' | 'other'
-
 type StreamItem = {
   id: string
   producerId: string
@@ -23,8 +21,6 @@ function clampCameraSlots(n: number): number {
 }
 
 export default function LiveFeed() {
-  const [view, setView] = useState<ViewFilter>('all')
-  const viewRef = useRef<ViewFilter>('all')
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
   
@@ -48,10 +44,6 @@ export default function LiveFeed() {
   useEffect(() => {
     maxCameraSlotsRef.current = maxCameraSlots
   }, [maxCameraSlots])
-
-  useEffect(() => {
-    viewRef.current = view
-  }, [view])
 
   /** If user reduces slots below the currently focused camera, exit focus. */
   useEffect(() => {
@@ -147,10 +139,12 @@ export default function LiveFeed() {
             }
           })
 
+          const token =
+            typeof window !== 'undefined' ? window.localStorage.getItem('token') ?? '' : ''
           const send_message: CustomTypes.sfu.sendDeviceRtpCapabilitiesToBackendType = {
             type: 'send-device-rtp-capabilities',
             rtpCapabilities: device.recvRtpCapabilities,
-            allocatedHostel: viewRef.current,
+            token,
           }
           ws.send(JSON.stringify(send_message))
         } else if (json_message.type === 'invitation-to-consume') {
@@ -374,18 +368,6 @@ export default function LiveFeed() {
 
         {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-          {(['all', 'hostel-a', 'hostel-b', 'other'] as ViewFilter[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              style={{ ...secondaryButton, fontWeight: view === v ? 600 : 500 }}
-              onClick={() => setView(v)}
-            >
-              {v === 'all' ? 'All view' : v}
-            </button>
-          ))}
-        </div>
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <Link to="/admin/notifications" style={{ ...secondaryButton, textDecoration: 'none' }}>View notifications</Link>
           <Link to="/admin/past-recordings" style={{ ...secondaryButton, textDecoration: 'none' }}>View past recordings</Link>

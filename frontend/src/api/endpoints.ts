@@ -27,6 +27,9 @@ export type InviteBody = {
 export type InviteResponse = {
   approved?: boolean
   error?: string
+  message?: string
+  /** Data URL PNG from server (includes host_email, hostel, invite_id) */
+  qrCode?: string
 }
 export async function invite(body: InviteBody) {
   return apiFetch<InviteResponse>('/invite', { method: 'POST', json: body })

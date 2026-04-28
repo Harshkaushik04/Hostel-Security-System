@@ -37,7 +37,8 @@ function App() {
         <Route path="/admin-sign-in" element={<AdminSignIn />} />
         {/* Student side */}
         <Route path="/invite" element={<RequireAuth><VisitorEntry /></RequireAuth>} />
-        <Route path="/emergencies" element={<RequireAuth><Emergencies /></RequireAuth>} />
+        {/* Public: linked from landing nav; no student session required */}
+        <Route path="/emergencies" element={<Emergencies />} />
         {/* Admin */}
         <Route path="/admin" element={<RequireAuth><AdminLanding /></RequireAuth>} />
         <Route path="/admin/emergencies" element={<RequireAuth><AdminEmergencies /></RequireAuth>} />

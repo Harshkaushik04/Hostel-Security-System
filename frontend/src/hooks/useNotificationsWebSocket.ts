@@ -14,7 +14,13 @@ export function useNotificationsWebSocket() {
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 
-    ws.onopen = () => setConnected(true)
+    ws.onopen = () => {
+      setConnected(true)
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+      if (token) {
+        ws.send(JSON.stringify({ type: 'notification-auth', token }))
+      }
+    }
     ws.onclose = () => setConnected(false)
     ws.onerror = () => setConnected(false)
     ws.onmessage = (event) => {
