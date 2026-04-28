@@ -4,7 +4,7 @@ import { Request,Response,NextFunction } from "express"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import {z} from "zod"
 import jwt from "jsonwebtoken"
-import { UserModel,AdminModel,EmergencyModel,CamerasModel,VisitorsModel,HostelsModel} from "./db.js"
+import { UserModel,AdminModel,EmergencyModel,CamerasModel,VisitorsModel,HostelsModel,NotificationsModel} from "./db.js"
 import bcrypt from "bcrypt"
 import dotenv from "dotenv"
 import path from "path"
@@ -56,18 +56,13 @@ app.use(express.json())
 
 const server = createServer(app);
 const wss = new WebSocketServer({server})
-let list_ws:WebSocket[]=[]
+/** Each authenticated admin WS maps to their admin.allocatedHostel (literal "all" = see all hostels). */
+const notificationClients = new Map<WebSocket, string>()
 
-wss.on("connection",function(ws:WebSocket){
-    list_ws.push(ws)
-    ws.on("message",(msg:WebSocket.RawData)=>{
-        const json_message=JSON.parse(msg.toString());
-        console.log(json_message)
-    })
-    ws.onclose=()=>{
-        list_ws=list_ws.filter(websocket => websocket!=ws)
-    }
-})
+function adminCanSeeHostel(allocatedHostel: string, targetHostel: string): boolean {
+    if (allocatedHostel === "all") return true
+    return allocatedHostel === targetHostel
+}
 
 const JWT_SECRET=process.env.JWT_SECRET
 const MONGO_URL=process.env.MONGO_URL
@@ -86,6 +81,37 @@ mongoose.connect(MONGO_URL as string)
     console.error("Database connection failed:", err.message);
     process.exit(1); // Kill the Node server immediately if DB is unreachable
 });
+
+wss.on("connection", function (ws: WebSocket) {
+    ws.on("message", async (msg: WebSocket.RawData) => {
+        try {
+            const json_message = JSON.parse(msg.toString()) as {
+                type?: string
+                token?: string
+            }
+            if (
+                json_message?.type === "notification-auth" &&
+                typeof json_message.token === "string"
+            ) {
+                const decryptedData = jwt.verify(
+                    json_message.token,
+                    JWT_SECRET as string
+                ) as jwt.JwtPayload
+                const admin = await AdminModel.findOne({
+                    email: decryptedData.email,
+                })
+                if (admin?.allocatedHostel) {
+                    notificationClients.set(ws, admin.allocatedHostel as string)
+                }
+            }
+        } catch (e) {
+            console.log("[notification-ws]", e)
+        }
+    })
+    ws.on("close", () => {
+        notificationClients.delete(ws)
+    })
+})
 
 type CsvAdminGate =
     | { ok: true; host: { privelege: string } }
@@ -132,10 +158,26 @@ app.post("/face-data",async (req:Request,res:Response)=>{
         }
         console.log(`${name} found`)
         const message=`${name} entered in ${cameraFound.hostelName}`
-        for(const ws of list_ws){
-            ws.send(JSON.stringify({
-                message:message
-            }))
+        await NotificationsModel.create({
+            hostelName:cameraFound.hostelName,
+            message,
+            kind:"face_entry",
+            cameraName:cameraName,
+        })
+        for(const [wsConn, allocated] of notificationClients){
+            if(!adminCanSeeHostel(allocated,cameraFound.hostelName)){
+                continue
+            }
+            try{
+                if(wsConn.readyState===WebSocket.OPEN){
+                    wsConn.send(JSON.stringify({
+                        message:message
+                    }))
+                }
+            }
+            catch(_){
+                // ignore send errors
+            }
         }
         return res.json({
             message:message
@@ -189,16 +231,25 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
             guest_contact_number:guest_contact_number
         })
         const message=`${guest_name} with phone number ${guest_contact_number} entered in ${cameraFound.hostelName} with host ${host.name}`;
-        for(const ws of list_ws){
+        await NotificationsModel.create({
+            hostelName:cameraFound.hostelName,
+            message,
+            kind:"visitor_qr",
+            cameraName:cameraName,
+        })
+        for(const [wsConn, allocated] of notificationClients){
+            if(!adminCanSeeHostel(allocated,cameraFound.hostelName)){
+                continue
+            }
             try{
-                if(ws.readyState == WebSocket.OPEN){
-                    ws.send(JSON.stringify({
+                if(wsConn.readyState == WebSocket.OPEN){
+                    wsConn.send(JSON.stringify({
                         message:message
                     }))
                 }
             }
             catch(e){
-                console.log(`couldnt send to a ws connection,length of ws_list=${list_ws.length}`)
+                console.log(`couldnt send notification ws: ${e}`)
             }
         }
         return res.json({
@@ -726,6 +777,43 @@ app.get("/emergencies",async (req:Request,res:Response)=>{
     }
 })
 
+app.post("/fetch-previous-notifications",async (req:Request,res:Response)=>{
+    try{
+        const kRaw=(req.body as { k?: number }).k ?? 20
+        const k=Math.min(200,Math.max(1,Number(kRaw)||20))
+        let token=req.headers.token;
+        if(!token){
+            return res.json({
+                error:"req.headers.token is null"
+            })
+        }
+        token = token as string;
+        const decryptedData=jwt.verify(token,JWT_SECRET as string) as jwt.JwtPayload;
+        const admin=await AdminModel.findOne({
+            email:decryptedData.email
+        })
+        if(!admin){
+            return res.json({
+                error:"admin users only"
+            })
+        }
+        const query: Record<string, unknown>={}
+        if(admin.allocatedHostel!=="all"){
+            query.hostelName=admin.allocatedHostel
+        }
+        const docs=await NotificationsModel.find(query)
+            .sort({ createdAt: -1 })
+            .limit(k)
+            .lean()
+        return res.json({
+            notifications:docs,
+        })
+    }
+    catch{
+        return res.status(401).json({ error:"invalid token" })
+    }
+})
+
 app.post("/add-hostel",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.AddHostelRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
@@ -832,7 +920,11 @@ app.post("/get-cameras-list", async (req: Request, res: Response) => {
                 error:"admin users only"
             })
         }
-        const docs = await CamerasModel.find().sort({ cameraName: 1 })
+        const camQuery: Record<string, unknown>={}
+        if(admin.allocatedHostel!=="all"){
+            camQuery.hostelName=admin.allocatedHostel
+        }
+        const docs = await CamerasModel.find(camQuery).sort({ cameraName: 1 })
         const cameras = docs.map((d) => ({
             cameraName: d.cameraName,
             hostelName: d.hostelName,
@@ -880,6 +972,12 @@ app.post("/add-camera", async (req: Request, res: Response) => {
         return res.send({
             approved:false,
             error:"hostel does not exist — add it first under Manage hostels"
+        })
+    }
+    if(host.allocatedHostel!=="all" && reqBody.hostelName!==host.allocatedHostel){
+        return res.send({
+            approved:false,
+            error:"cannot assign camera to a hostel outside your allocation"
         })
     }
     const dup = await CamerasModel.findOne({
@@ -948,6 +1046,20 @@ app.post("/edit-camera", async (req: Request, res: Response) => {
             error:"camera not found"
         })
     }
+    if(host.allocatedHostel!=="all"){
+        if(row.hostelName!==host.allocatedHostel){
+            return res.send({
+                approved:false,
+                error:"cannot edit cameras outside your hostel allocation"
+            })
+        }
+        if(reqBody.hostelName!==host.allocatedHostel){
+            return res.send({
+                approved:false,
+                error:"cannot reassign camera to another hostel"
+            })
+        }
+    }
     const nextName = reqBody.newCameraName?.trim()
     if(nextName && nextName !== row.cameraName){
         const clash = await CamerasModel.findOne({
@@ -998,15 +1110,24 @@ app.post("/delete-camera", async (req: Request, res: Response) => {
         })
     }
     const reqBody: CustomTypes.manageUsers.DeleteCameraRequestType = req.body
-    const result = await CamerasModel.deleteOne({
+    const existing = await CamerasModel.findOne({
         cameraName: reqBody.cameraName
     })
-    if(result.deletedCount === 0){
+    if(!existing){
         return res.send({
             approved:false,
             error:"camera not found"
         })
     }
+    if(host.allocatedHostel!=="all" && existing.hostelName!==host.allocatedHostel){
+        return res.send({
+            approved:false,
+            error:"cannot delete cameras outside your hostel allocation"
+        })
+    }
+    await CamerasModel.deleteOne({
+        cameraName: reqBody.cameraName
+    })
     return res.send({
         approved:true
     })
