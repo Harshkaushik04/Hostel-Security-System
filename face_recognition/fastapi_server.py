@@ -44,17 +44,23 @@ qr_cache = {}
 CACHE_TTL = 10.0  
 
 NODE_BACKEND_URL = f"http://{os.getenv('NODE_BACKEND_IP')}:3000"
-MEDIAMTX_API_URL = F"http://{os.getenv('MEDIAMTX_IP')}:9997/v3/paths/list"
+MEDIAMTX_API_URL = f"http://{os.getenv('MEDIAMTX_IP')}:9997/v3/paths/list"
 
 # --- 3. Helper Functions ---
+# Only accept RTSP path names `camera1` … `camera100` for face/QR (aligned with product slots).
+MIN_CAMERA_INDEX = 1
+MAX_CAMERA_INDEX = 100
+
+
 def is_valid_camera(name: str) -> bool:
-    if not name:
+    """True only for names like `camera1` … `camera100` (inclusive)."""
+    if not name or not isinstance(name, str):
         return False
-    match = re.match(r'^camera(\d+)$', name)
-    if match:
-        num = int(match.group(1))
-        return 1 <= num <= 100
-    return False
+    match = re.match(r"^camera(\d+)$", name.strip())
+    if not match:
+        return False
+    num = int(match.group(1))
+    return MIN_CAMERA_INDEX <= num <= MAX_CAMERA_INDEX
 
 def should_send_to_backend(cache_key: str, cache_dict: dict) -> bool:
     current_time = time.time()
@@ -65,6 +71,8 @@ def should_send_to_backend(cache_key: str, cache_dict: dict) -> bool:
     return False
 
 def send_face_to_node(name: str, camera_name: str):
+    if not is_valid_camera(camera_name):
+        return
     if name == "Unknown" or not name:
         return
     print(f"[HELLO] Face visible: {name} from {camera_name}")
@@ -78,6 +86,8 @@ def send_face_to_node(name: str, camera_name: str):
             print(f"[NODE ERROR] Face payload failed: {e}")
 
 def send_qr_to_node(payload_str: str, camera_name: str):
+    if not is_valid_camera(camera_name):
+        return
     if not payload_str:
         return
     cache_key = f"{camera_name}_{payload_str}"
@@ -215,6 +225,13 @@ def process_stream(camera_name: str, stop_event: threading.Event):
 
 
 def start_stream_worker(stream_name: str):
+    if not is_valid_camera(stream_name):
+        print(
+            f"[REJECT] Ignored stream '{stream_name}': "
+            f"must be camera{MIN_CAMERA_INDEX}–camera{MAX_CAMERA_INDEX} only."
+        )
+        return
+
     session = stream_sessions.get(stream_name)
     
     if session and session["thread"].is_alive():
@@ -251,7 +268,13 @@ def sync_active_cameras():
 @app.get("/stream-started")
 def stream_started(name: str):
     if not is_valid_camera(name):
-        return {"status": "ignored", "message": f"Rejected: '{name}' is not in camera1-camera100 range."}
+        return {
+            "status": "ignored",
+            "message": (
+                f"Rejected: '{name}' is not a supported camera name. "
+                f"Only {MIN_CAMERA_INDEX}…{MAX_CAMERA_INDEX} (e.g. camera1…camera{MAX_CAMERA_INDEX})."
+            ),
+        }
     
     start_stream_worker(name)
     return {"status": "success", "message": f"Started processing {name}"}
