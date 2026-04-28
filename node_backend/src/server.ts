@@ -261,7 +261,7 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
 })
 
 //=========================== MediaMTX->node_backend recordings save ============================
-const RECORDINGS_BASE_DIR = "D:\\Documents_D\\HOMEWORK\\6th_sem\\DEP\\recordings";
+const RECORDINGS_BASE_DIR = "/home/harsh/recordings";
 const recordingProcesses = new Map<string, ChildProcess>();
 
 // Make sure base directory exists
