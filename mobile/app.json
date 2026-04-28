@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "mobile",
-    "slug": "mobile",
+    "slug": "dep-mobile",
     "scheme": "hostel-security",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -35,9 +35,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "34049e1b-112a-42b4-9efc-9107795bcb53"
+        "projectId": "349bc1f8-e94b-46b9-b502-04aacdd652d9"
       }
     },
-    "owner": "yashhatwar99"
+    "owner": "clg12"
   }
 }
