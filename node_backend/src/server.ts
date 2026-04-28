@@ -4,7 +4,7 @@ import { Request,Response,NextFunction } from "express"
 import {CustomSchemas,CustomTypes} from "@my-app/shared"
 import {z} from "zod"
 import jwt from "jsonwebtoken"
-import { UserModel,AdminModel,EmergencyModel,CamerasModel,VisitorsModel,HostelsModel} from "./db.js"
+import { UserModel,AdminModel,EmergencyModel,CamerasModel,VisitorsModel,HostelsModel,NotificationsModel} from "./db.js"
 import bcrypt from "bcrypt"
 import dotenv from "dotenv"
 import path from "path"
@@ -13,10 +13,40 @@ import mongoose from "mongoose"
 import QRCode from 'qrcode';
 import WebSocket,{WebSocketServer} from "ws";
 import { createServer } from "http"
+import { spawn, ChildProcess } from 'child_process';
+import fs from 'fs';
+import multer from "multer";
+import { parse } from "csv-parse/sync";
 
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
 });
+
+const csvUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024 },
+})
+
+function normalizeCsvHeader(header: string): string {
+    return header.trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_")
+}
+
+function parseCsvRecords(buf: Buffer): Record<string, string>[] {
+    const records = parse(buf.toString("utf8"), {
+        bom: true,
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+    }) as Record<string, string>[]
+    return records.map((row) => {
+        const out: Record<string, string> = {}
+        for (const [k, v] of Object.entries(row)) {
+            out[normalizeCsvHeader(k)] = String(v ?? "").trim()
+        }
+        return out
+    })
+}
 
 const app=express()
 app.use(cors({
@@ -26,18 +56,13 @@ app.use(express.json())
 
 const server = createServer(app);
 const wss = new WebSocketServer({server})
-let list_ws:WebSocket[]=[]
+/** Each authenticated admin WS maps to their admin.allocatedHostel (literal "all" = see all hostels). */
+const notificationClients = new Map<WebSocket, string>()
 
-wss.on("connection",function(ws:WebSocket){
-    list_ws.push(ws)
-    ws.on("message",(msg:WebSocket.RawData)=>{
-        const json_message=JSON.parse(msg.toString());
-        console.log(json_message)
-    })
-    ws.onclose=()=>{
-        list_ws=list_ws.filter(websocket => websocket!=ws)
-    }
-})
+function adminCanSeeHostel(allocatedHostel: string, targetHostel: string): boolean {
+    if (allocatedHostel === "all") return true
+    return allocatedHostel === targetHostel
+}
 
 const JWT_SECRET=process.env.JWT_SECRET
 const MONGO_URL=process.env.MONGO_URL
@@ -57,6 +82,56 @@ mongoose.connect(MONGO_URL as string)
     process.exit(1); // Kill the Node server immediately if DB is unreachable
 });
 
+wss.on("connection", function (ws: WebSocket) {
+    ws.on("message", async (msg: WebSocket.RawData) => {
+        try {
+            const json_message = JSON.parse(msg.toString()) as {
+                type?: string
+                token?: string
+            }
+            if (
+                json_message?.type === "notification-auth" &&
+                typeof json_message.token === "string"
+            ) {
+                const decryptedData = jwt.verify(
+                    json_message.token,
+                    JWT_SECRET as string
+                ) as jwt.JwtPayload
+                const admin = await AdminModel.findOne({
+                    email: decryptedData.email,
+                })
+                if (admin?.allocatedHostel) {
+                    notificationClients.set(ws, admin.allocatedHostel as string)
+                }
+            }
+        } catch (e) {
+            console.log("[notification-ws]", e)
+        }
+    })
+    ws.on("close", () => {
+        notificationClients.delete(ws)
+    })
+})
+
+type CsvAdminGate =
+    | { ok: true; host: { privelege: string } }
+    | { ok: false; reason: "no_token" | "no_admin" }
+
+async function getAdminForCsv(req: Request): Promise<CsvAdminGate> {
+    let token = req.headers.token
+    if (!token) {
+        return { ok: false, reason: "no_token" }
+    }
+    token = token as string
+    const decryptedData = jwt.verify(token, JWT_SECRET as string) as jwt.JwtPayload
+    const host = await AdminModel.findOne({
+        email: decryptedData.email,
+    })
+    if (!host) {
+        return { ok: false, reason: "no_admin" }
+    }
+    return { ok: true, host: { privelege: host.privelege as string } }
+}
 
 app.post("/face-data",async (req:Request,res:Response)=>{
     console.log(`entered [face-data]`)
@@ -83,10 +158,26 @@ app.post("/face-data",async (req:Request,res:Response)=>{
         }
         console.log(`${name} found`)
         const message=`${name} entered in ${cameraFound.hostelName}`
-        for(const ws of list_ws){
-            ws.send(JSON.stringify({
-                message:message
-            }))
+        await NotificationsModel.create({
+            hostelName:cameraFound.hostelName,
+            message,
+            kind:"face_entry",
+            cameraName:cameraName,
+        })
+        for(const [wsConn, allocated] of notificationClients){
+            if(!adminCanSeeHostel(allocated,cameraFound.hostelName)){
+                continue
+            }
+            try{
+                if(wsConn.readyState===WebSocket.OPEN){
+                    wsConn.send(JSON.stringify({
+                        message:message
+                    }))
+                }
+            }
+            catch(_){
+                // ignore send errors
+            }
         }
         return res.json({
             message:message
@@ -140,16 +231,25 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
             guest_contact_number:guest_contact_number
         })
         const message=`${guest_name} with phone number ${guest_contact_number} entered in ${cameraFound.hostelName} with host ${host.name}`;
-        for(const ws of list_ws){
+        await NotificationsModel.create({
+            hostelName:cameraFound.hostelName,
+            message,
+            kind:"visitor_qr",
+            cameraName:cameraName,
+        })
+        for(const [wsConn, allocated] of notificationClients){
+            if(!adminCanSeeHostel(allocated,cameraFound.hostelName)){
+                continue
+            }
             try{
-                if(ws.readyState == WebSocket.OPEN){
-                    ws.send(JSON.stringify({
+                if(wsConn.readyState == WebSocket.OPEN){
+                    wsConn.send(JSON.stringify({
                         message:message
                     }))
                 }
             }
             catch(e){
-                console.log(`couldnt send to a ws connection,length of ws_list=${list_ws.length}`)
+                console.log(`couldnt send notification ws: ${e}`)
             }
         }
         return res.json({
@@ -157,6 +257,179 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
         })
     }
 })
+
+//=========================== MediaMTX->node_backend recordings save ============================
+const RECORDINGS_BASE_DIR = '/home/harsh/recordings';
+const recordingProcesses = new Map<string, ChildProcess>();
+
+// Make sure base directory exists
+if (!fs.existsSync(RECORDINGS_BASE_DIR)) {
+    fs.mkdirSync(RECORDINGS_BASE_DIR, { recursive: true });
+}
+
+/*
+  1. START RECORDING (Save from MediaMTX)
+  Body: { cameraName: "camera1" }
+ */
+app.post('/recordings/start', (req: Request, res: Response) => {
+    const cameraName = req.query.cameraName as string;
+    if (!cameraName) return res.status(400).json({ error: 'cameraName is required' });
+
+    if (recordingProcesses.has(cameraName)) {
+        return res.status(400).json({ error: `Recording already running for ${cameraName}` });
+    }
+
+    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
+    if (!fs.existsSync(cameraDir)) {
+        fs.mkdirSync(cameraDir, { recursive: true });
+    }
+    // Connects to your local MediaMTX container
+    const rtspUrl = `rtsp://${process.env.MEDIAMTX_IP || 'localhost'}:8554/${cameraName}`;
+    const outputPattern = path.join(cameraDir, '%Y-%m-%d_%H-%M-%S.mp4');
+
+    const ffmpegArgs = [
+        '-rtsp_transport', 'tcp',
+        '-timeout', '5000000',
+        '-fflags', '+genpts',
+        '-i', rtspUrl,
+        '-c:v', 'copy',
+        '-an',
+        '-f', 'segment',
+        '-segment_time', '30',
+        '-segment_format', 'mp4',
+        '-segment_format_options', 'movflags=+faststart',
+        '-reset_timestamps', '1',
+        '-strftime', '1',
+        outputPattern
+    ];
+    let ffmpeg:ChildProcess = spawn('ffmpeg', ffmpegArgs);
+    recordingProcesses.set(cameraName, ffmpeg);
+
+    ffmpeg.stderr?.on('data', (data) => {
+        const message = data.toString().trim();
+        if (message.length > 0) {
+            console.log(`[FFmpeg ${cameraName}] ${message}`);
+        }
+    });
+
+    ffmpeg.on('close', (code) => {
+        if (code === 0 || code === null) {
+            console.log(`Recording stopped for ${cameraName} (Code: ${code})`);
+        } else {
+            console.error(`Recording crashed for ${cameraName} (Code: ${code})`);
+        }
+        recordingProcesses.delete(cameraName);
+    });
+
+    return res.json({ message: `Recording started for ${cameraName}` });
+});
+
+/*
+  2. STOP RECORDING
+  Body: { cameraName: "camera1" }
+ */
+app.post('/recordings/stop', (req: Request, res: Response) => {
+    const cameraName  = req.query.cameraName as string;
+    const ffmpegProcess = recordingProcesses.get(cameraName);
+
+    if (!ffmpegProcess) {
+        return res.status(400).json({ error: 'No active recording found' });
+    }
+
+    // SIGINT allows FFmpeg to safely finalize the MP4 file before closing
+    ffmpegProcess.kill('SIGINT');
+    recordingProcesses.delete(cameraName);
+
+    return res.json({ message: `Recording stopped for ${cameraName}` });
+});
+
+//=========================== Frontend->node_backend recordings quering ============================
+/*
+  1. GET LIST OF RECORDINGS
+  Example: GET /recordings/camera1
+ */
+type singleCameraType={
+    cameraName:string
+}
+type singleCameraTypeWthFileNameType={
+    cameraName:string,
+    filename:string
+}
+
+app.get('/recordings/:cameraName', (req: Request, res: Response) => {
+    const { cameraName } = req.params as singleCameraType;
+    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
+
+    if (!fs.existsSync(cameraDir)) {
+        return res.json({ files: [] });
+    }
+
+    const files = fs.readdirSync(cameraDir)
+        .filter(file => file.endsWith('.mp4'))
+        .sort(); // Chronological order based on timestamp filenames
+
+    // While recording, the newest segment can still be open and not playable yet.
+    const playableFiles = recordingProcesses.has(cameraName) ? files.slice(0, -1) : files;
+
+    return res.json({ files: playableFiles });
+});
+
+/*
+  2. STREAM RECORDING (Supports Play, Pause, Seek natively)
+  Example: GET /recordings/stream/camera1/2026-04-28_12-00-00.mp4
+ */
+app.get('/recordings/stream/:cameraName/:filename', (req: Request, res: Response) => {
+    const { cameraName, filename } = req.params as singleCameraTypeWthFileNameType;
+    const videoPath = path.join(RECORDINGS_BASE_DIR, cameraName, filename);
+    const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
+
+    if (!fs.existsSync(videoPath)) {
+        return res.status(404).send('Video file not found');
+    }
+
+    if (recordingProcesses.has(cameraName) && fs.existsSync(cameraDir)) {
+        const mp4Files = fs.readdirSync(cameraDir)
+            .filter(file => file.endsWith('.mp4'))
+            .sort();
+        const latestFile = mp4Files[mp4Files.length - 1];
+        if (latestFile === filename) {
+            return res.status(409).send('Recording is still in progress for this file. Try an older segment or stop recording first.');
+        }
+    }
+
+    const stat = fs.statSync(videoPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    if (range) {
+        // The browser is asking for a specific chunk (Seeking or continuing playback)
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        const chunksize = (end - start) + 1;
+        const file = fs.createReadStream(videoPath, { start, end });
+        
+        const head = {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunksize,
+            'Content-Type': 'video/mp4',
+        };
+
+        // 206 Partial Content is critical for pausing/seeking to work
+        res.writeHead(206, head);
+        file.pipe(res);
+    } else {
+        // Fallback if the browser doesn't send a Range header (rare for modern <video> tags)
+        const head = {
+            'Content-Length': fileSize,
+            'Content-Type': 'video/mp4',
+        };
+        res.writeHead(200, head);
+        fs.createReadStream(videoPath).pipe(res);
+    }
+});
 
 
 function authMiddleware(req:Request,res:Response,next:NextFunction){
@@ -504,6 +777,43 @@ app.get("/emergencies",async (req:Request,res:Response)=>{
     }
 })
 
+app.post("/fetch-previous-notifications",async (req:Request,res:Response)=>{
+    try{
+        const kRaw=(req.body as { k?: number }).k ?? 20
+        const k=Math.min(200,Math.max(1,Number(kRaw)||20))
+        let token=req.headers.token;
+        if(!token){
+            return res.json({
+                error:"req.headers.token is null"
+            })
+        }
+        token = token as string;
+        const decryptedData=jwt.verify(token,JWT_SECRET as string) as jwt.JwtPayload;
+        const admin=await AdminModel.findOne({
+            email:decryptedData.email
+        })
+        if(!admin){
+            return res.json({
+                error:"admin users only"
+            })
+        }
+        const query: Record<string, unknown>={}
+        if(admin.allocatedHostel!=="all"){
+            query.hostelName=admin.allocatedHostel
+        }
+        const docs=await NotificationsModel.find(query)
+            .sort({ createdAt: -1 })
+            .limit(k)
+            .lean()
+        return res.json({
+            notifications:docs,
+        })
+    }
+    catch{
+        return res.status(401).json({ error:"invalid token" })
+    }
+})
+
 app.post("/add-hostel",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.AddHostelRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
@@ -591,6 +901,238 @@ app.post("/get-admin-users-list",async (req:Request,res:Response)=>{
     }
 })
 
+//=========================== Camera -- hostel (CamerasModel) ============================
+app.post("/get-cameras-list", async (req: Request, res: Response) => {
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    try {
+        const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+        const admin = await AdminModel.findOne({
+            email:decryptedData.email
+        })
+        if(!admin){
+            return res.json({
+                error:"admin users only"
+            })
+        }
+        const camQuery: Record<string, unknown>={}
+        if(admin.allocatedHostel!=="all"){
+            camQuery.hostelName=admin.allocatedHostel
+        }
+        const docs = await CamerasModel.find(camQuery).sort({ cameraName: 1 })
+        const cameras = docs.map((d) => ({
+            cameraName: d.cameraName,
+            hostelName: d.hostelName,
+        }))
+        return res.json({ cameras })
+    } catch {
+        return res.status(401).json({ error: "invalid token" })
+    }
+})
+
+app.post("/add-camera", async (req: Request, res: Response) => {
+    const reqCheck = CustomSchemas.manageUsers.AddCameraRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema invalid\n${reqCheck.error}`
+        })
+    }
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+    const host = await AdminModel.findOne({
+        email:decryptedData.email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege==="gaurd"){
+        return res.json({
+            error:"gaurd privelege cant manage cameras"
+        })
+    }
+    const reqBody: CustomTypes.manageUsers.AddCameraRequestType = req.body
+    const hostelOk = await HostelsModel.findOne({
+        hostel_name: reqBody.hostelName
+    })
+    if(!hostelOk){
+        return res.send({
+            approved:false,
+            error:"hostel does not exist — add it first under Manage hostels"
+        })
+    }
+    if(host.allocatedHostel!=="all" && reqBody.hostelName!==host.allocatedHostel){
+        return res.send({
+            approved:false,
+            error:"cannot assign camera to a hostel outside your allocation"
+        })
+    }
+    const dup = await CamerasModel.findOne({
+        cameraName: reqBody.cameraName
+    })
+    if(dup){
+        return res.send({
+            approved:false,
+            error:"camera name already exists"
+        })
+    }
+    await CamerasModel.create({
+        cameraName: reqBody.cameraName,
+        hostelName: reqBody.hostelName,
+    })
+    return res.send({
+        approved:true
+    })
+})
+
+app.post("/edit-camera", async (req: Request, res: Response) => {
+    const reqCheck = CustomSchemas.manageUsers.EditCameraRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema invalid\n${reqCheck.error}`
+        })
+    }
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+    const host = await AdminModel.findOne({
+        email:decryptedData.email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege==="gaurd"){
+        return res.json({
+            error:"gaurd privelege cant manage cameras"
+        })
+    }
+    const reqBody: CustomTypes.manageUsers.EditCameraRequestType = req.body
+    const hostelOk = await HostelsModel.findOne({
+        hostel_name: reqBody.hostelName
+    })
+    if(!hostelOk){
+        return res.send({
+            approved:false,
+            error:"hostel does not exist — add it first under Manage hostels"
+        })
+    }
+    const row = await CamerasModel.findOne({
+        cameraName: reqBody.cameraName
+    })
+    if(!row){
+        return res.send({
+            approved:false,
+            error:"camera not found"
+        })
+    }
+    if(host.allocatedHostel!=="all"){
+        if(row.hostelName!==host.allocatedHostel){
+            return res.send({
+                approved:false,
+                error:"cannot edit cameras outside your hostel allocation"
+            })
+        }
+        if(reqBody.hostelName!==host.allocatedHostel){
+            return res.send({
+                approved:false,
+                error:"cannot reassign camera to another hostel"
+            })
+        }
+    }
+    const nextName = reqBody.newCameraName?.trim()
+    if(nextName && nextName !== row.cameraName){
+        const clash = await CamerasModel.findOne({
+            cameraName: nextName
+        })
+        if(clash){
+            return res.send({
+                approved:false,
+                error:"new camera name already in use"
+            })
+        }
+        row.cameraName = nextName
+    }
+    row.hostelName = reqBody.hostelName
+    await row.save()
+    return res.send({
+        approved:true
+    })
+})
+
+app.post("/delete-camera", async (req: Request, res: Response) => {
+    const reqCheck = CustomSchemas.manageUsers.DeleteCameraRequestSchema.safeParse(req.body)
+    if(!reqCheck.success){
+        return res.send({
+            approved:false,
+            error:`request schema invalid\n${reqCheck.error}`
+        })
+    }
+    let token = req.headers.token;
+    if(!token){
+        return res.json({
+            error:"req.headers.token is null"
+        })
+    }
+    token = token as string;
+    const decryptedData=jwt.verify(token,JWT_SECRET) as jwt.JwtPayload;
+    const host = await AdminModel.findOne({
+        email:decryptedData.email
+    })
+    if(!host){
+        return res.json({
+            error:"host user not in db"
+        })
+    }
+    if(host.privelege==="gaurd"){
+        return res.json({
+            error:"gaurd privelege cant manage cameras"
+        })
+    }
+    const reqBody: CustomTypes.manageUsers.DeleteCameraRequestType = req.body
+    const existing = await CamerasModel.findOne({
+        cameraName: reqBody.cameraName
+    })
+    if(!existing){
+        return res.send({
+            approved:false,
+            error:"camera not found"
+        })
+    }
+    if(host.allocatedHostel!=="all" && existing.hostelName!==host.allocatedHostel){
+        return res.send({
+            approved:false,
+            error:"cannot delete cameras outside your hostel allocation"
+        })
+    }
+    await CamerasModel.deleteOne({
+        cameraName: reqBody.cameraName
+    })
+    return res.send({
+        approved:true
+    })
+})
+
 app.post("/upload-manually",async(req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.UploadManuallyRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
@@ -654,6 +1196,238 @@ app.post("/upload-manually",async(req:Request,res:Response)=>{
         })
     }
 })
+
+app.post(
+    "/upload-student-csv",
+    csvUpload.single("file"),
+    async (req: Request, res: Response) => {
+        const gate = await getAdminForCsv(req)
+        if (!gate.ok) {
+            if (gate.reason === "no_token") {
+                return res.json({
+                    error: "req.headers.token is null",
+                })
+            }
+            return res.json({
+                error: "host user not in db",
+            })
+        }
+        const { host } = gate
+        if (host.privelege === "gaurd") {
+            return res.json({
+                error: "gaurd privelege cant add students",
+            })
+        }
+        const f = req.file
+        if (!f?.buffer) {
+            return res.status(400).json({
+                approved: false,
+                error: "no file — use multipart field name: file",
+            })
+        }
+        let rows: Record<string, string>[]
+        try {
+            rows = parseCsvRecords(f.buffer)
+        } catch (e) {
+            return res.status(400).json({
+                approved: false,
+                error: e instanceof Error ? e.message : "invalid csv",
+            })
+        }
+        if (rows.length === 0) {
+            return res.json({
+                approved: false,
+                error: "csv has no data rows",
+            })
+        }
+        const rowErrors: { row: number; message: string }[] = []
+        let created = 0
+        let skipped = 0
+        const maxErrors = 100
+        for (let i = 0; i < rows.length; i++) {
+            const rowNum = i + 2
+            const r = rows[i]
+            const name = r.name
+            const email = r.email
+            const password = r.password
+            const entry_number = r.entry_number
+            const hostel_name = r.hostel_name
+            if (!name || !email || !password || !entry_number || !hostel_name) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        "missing column — need name, email, password, entry_number, hostel_name",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            const dup = await UserModel.findOne({
+                $or: [{ email }, { entry_number }],
+            })
+            if (dup) {
+                rowErrors.push({
+                    row: rowNum,
+                    message: "duplicate email or entry_number",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            try {
+                const hashed_password = await bcrypt.hash(password, 5)
+                await UserModel.create({
+                    name,
+                    email,
+                    password: hashed_password,
+                    entry_number,
+                    hostel_name,
+                })
+                created++
+            } catch (err) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        err instanceof Error ? err.message : "insert failed",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+            }
+        }
+        return res.json({
+            approved: true,
+            created,
+            skipped,
+            rowErrors,
+        })
+    }
+)
+
+app.post(
+    "/upload-admin-csv",
+    csvUpload.single("file"),
+    async (req: Request, res: Response) => {
+        const gate = await getAdminForCsv(req)
+        if (!gate.ok) {
+            if (gate.reason === "no_token") {
+                return res.json({
+                    error: "req.headers.token is null",
+                })
+            }
+            return res.json({
+                error: "host user not in db",
+            })
+        }
+        const { host } = gate
+        if (host.privelege === "gaurd") {
+            return res.json({
+                error: "gaurd privelege cant add admins",
+            })
+        }
+        const f = req.file
+        if (!f?.buffer) {
+            return res.status(400).json({
+                approved: false,
+                error: "no file — use multipart field name: file",
+            })
+        }
+        let rows: Record<string, string>[]
+        try {
+            rows = parseCsvRecords(f.buffer)
+        } catch (e) {
+            return res.status(400).json({
+                approved: false,
+                error: e instanceof Error ? e.message : "invalid csv",
+            })
+        }
+        if (rows.length === 0) {
+            return res.json({
+                approved: false,
+                error: "csv has no data rows",
+            })
+        }
+        const validPriv = new Set(["super_user", "top_privelege", "gaurd"])
+        const rowErrors: { row: number; message: string }[] = []
+        let created = 0
+        let skipped = 0
+        const maxErrors = 100
+        for (let i = 0; i < rows.length; i++) {
+            const rowNum = i + 2
+            const r = rows[i]
+            const name = r.name
+            const email = r.email
+            const password = r.password
+            const privelege = r.privelege
+            const allocatedHostel =
+                r.allocated_hostel || r.allocatedhostel || ""
+            if (!name || !email || !password || !privelege || !allocatedHostel) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        "missing column — need name, email, password, privelege, allocated_hostel",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            if (!validPriv.has(privelege)) {
+                rowErrors.push({
+                    row: rowNum,
+                    message: `invalid privelege (use super_user, top_privelege, gaurd): ${privelege}`,
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            if (host.privelege === "top_privelege" && privelege === "super_user") {
+                rowErrors.push({
+                    row: rowNum,
+                    message: "top_privelege cant add super_user",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            const dup = await AdminModel.findOne({
+                email,
+            })
+            if (dup) {
+                rowErrors.push({
+                    row: rowNum,
+                    message: "duplicate email",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+                continue
+            }
+            try {
+                const hashed_password = await bcrypt.hash(password, 5)
+                await AdminModel.create({
+                    name,
+                    email,
+                    password: hashed_password,
+                    privelege,
+                    allocatedHostel,
+                })
+                created++
+            } catch (err) {
+                rowErrors.push({
+                    row: rowNum,
+                    message:
+                        err instanceof Error ? err.message : "insert failed",
+                })
+                skipped++
+                if (rowErrors.length >= maxErrors) break
+            }
+        }
+        return res.json({
+            approved: true,
+            created,
+            skipped,
+            rowErrors,
+        })
+    }
+)
 
 app.post("/edit",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.EditRequestSchema.safeParse(req.body);
@@ -769,7 +1543,7 @@ app.post("/edit",async (req:Request,res:Response)=>{
     }
 })
 
-app.post("delete",async (req:Request,res:Response)=>{
+app.post("/delete",async (req:Request,res:Response)=>{
     const reqCheck = CustomSchemas.manageUsers.DeleteRequestSchema.safeParse(req.body)
     if(!reqCheck.success){
         return res.send({

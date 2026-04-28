@@ -21,3 +21,9 @@ export type EditRequestType = z.infer<typeof CustomSchemas.manageUsers.EditReque
 export type DeleteRequestType = z.infer<typeof CustomSchemas.manageUsers.DeleteRequestSchema>
 export type DeleteStudentRequestSchema = z.infer<typeof CustomSchemas.manageUsers.DeleteStudentRequestSchema>
 export type DeleteAdminRequestSchema = z.infer<typeof CustomSchemas.manageUsers.DeleteAdminRequestSchema>
+
+export type CameraRowType = z.infer<typeof CustomSchemas.manageUsers.CameraRowSchema>
+export type GetCamerasListRightResponseType = z.infer<typeof CustomSchemas.manageUsers.GetCamerasListRightResponseSchema>
+export type AddCameraRequestType = z.infer<typeof CustomSchemas.manageUsers.AddCameraRequestSchema>
+export type EditCameraRequestType = z.infer<typeof CustomSchemas.manageUsers.EditCameraRequestSchema>
+export type DeleteCameraRequestType = z.infer<typeof CustomSchemas.manageUsers.DeleteCameraRequestSchema>

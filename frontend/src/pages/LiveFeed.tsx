@@ -4,8 +4,6 @@ import { Device } from 'mediasoup-client'
 import { CustomSchemas, CustomTypes } from '@my-app/shared'
 import { layout, card, secondaryButton, primaryButton, inputStyle } from '../styles/common'
 
-type ViewFilter = 'all' | 'hostel-a' | 'hostel-b' | 'other'
-
 type StreamItem = {
   id: string
   producerId: string
@@ -23,8 +21,6 @@ function clampCameraSlots(n: number): number {
 }
 
 export default function LiveFeed() {
-  const [view, setView] = useState<ViewFilter>('all')
-  const viewRef = useRef<ViewFilter>('all')
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
   
@@ -48,10 +44,6 @@ export default function LiveFeed() {
   useEffect(() => {
     maxCameraSlotsRef.current = maxCameraSlots
   }, [maxCameraSlots])
-
-  useEffect(() => {
-    viewRef.current = view
-  }, [view])
 
   /** If user reduces slots below the currently focused camera, exit focus. */
   useEffect(() => {
@@ -147,10 +139,12 @@ export default function LiveFeed() {
             }
           })
 
+          const token =
+            typeof window !== 'undefined' ? window.localStorage.getItem('token') ?? '' : ''
           const send_message: CustomTypes.sfu.sendDeviceRtpCapabilitiesToBackendType = {
             type: 'send-device-rtp-capabilities',
             rtpCapabilities: device.recvRtpCapabilities,
-            allocatedHostel: viewRef.current,
+            token,
           }
           ws.send(JSON.stringify(send_message))
         } else if (json_message.type === 'invitation-to-consume') {
@@ -241,6 +235,30 @@ export default function LiveFeed() {
     setFullscreenId((prev) => (prev === id ? null : id))
   }
 
+  /** True if browser fullscreen is active on this tile (or a node inside it, e.g. video). */
+  const isNativeFullscreenForTile = (tile: HTMLElement | null) => {
+    const fs = document.fullscreenElement
+    if (!fs || !tile) return false
+    return fs === tile || tile.contains(fs)
+  }
+
+  const exitNativeFullscreenIfNeeded = async (id: string) => {
+    const tile = tileRefsRef.current.get(id)
+    if (!tile || !isNativeFullscreenForTile(tile)) return false
+    try {
+      await document.exitFullscreen()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** In-page focus: double-click toggles. Browser fullscreen (Full screen button): double-click exits. */
+  const handleStreamTileDoubleClick = async (id: string) => {
+    if (await exitNativeFullscreenIfNeeded(id)) return
+    toggleFullscreen(id)
+  }
+
   const openNativeFullscreen = async (id: string) => {
     const tile = tileRefsRef.current.get(id)
     if (!tile) return
@@ -291,7 +309,8 @@ export default function LiveFeed() {
         <Link to="/admin/live-feed-landing" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back</Link>
         <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>Live feed</h1>
         <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>
-          WebRTC streams via SFU. Click Receive video to connect, then view below. Double-click for fullscreen.
+          WebRTC streams via SFU. Click Receive video to connect. Double-click a tile to expand in the page; double-click
+          again to exit. Use Full screen for browser fullscreen — double-click the video (or tile) to exit that mode.
         </p>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -374,18 +393,6 @@ export default function LiveFeed() {
 
         {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-          {(['all', 'hostel-a', 'hostel-b', 'other'] as ViewFilter[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              style={{ ...secondaryButton, fontWeight: view === v ? 600 : 500 }}
-              onClick={() => setView(v)}
-            >
-              {v === 'all' ? 'All view' : v}
-            </button>
-          ))}
-        </div>
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <Link to="/admin/notifications" style={{ ...secondaryButton, textDecoration: 'none' }}>View notifications</Link>
           <Link to="/admin/past-recordings" style={{ ...secondaryButton, textDecoration: 'none' }}>View past recordings</Link>
@@ -408,7 +415,7 @@ export default function LiveFeed() {
                 key={item.id}
                 role="button"
                 tabIndex={0}
-                onDoubleClick={() => toggleFullscreen(item.id)}
+                onDoubleClick={() => void handleStreamTileDoubleClick(item.id)}
                 ref={(el) => {
                   if (el) tileRefsRef.current.set(item.id, el)
                   else tileRefsRef.current.delete(item.id)
@@ -431,6 +438,11 @@ export default function LiveFeed() {
                       el.play().catch(() => {})
                     }
                   }}
+                  onDoubleClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void handleStreamTileDoubleClick(item.id)
+                  }}
                   autoPlay
                   playsInline
                   muted
@@ -448,7 +460,7 @@ export default function LiveFeed() {
                     fontSize: '0.85rem',
                   }}
                 >
-                  {item.label} — double-click fullscreen
+                  {item.label} — double-click to expand / exit browser fullscreen
                 </div>
                 <button
                   type="button"
