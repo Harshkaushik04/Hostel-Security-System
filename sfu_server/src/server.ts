@@ -54,7 +54,8 @@ async function resolveAllocatedHostelFromToken(token: string | undefined): Promi
         const decoded = jwt.verify(token.trim(), JWT_SECRET) as jwt.JwtPayload & { email?: string };
         const email = decoded.email;
         if (!email) return { error: "invalid token payload" };
-        const admin = await AdminModel.findOne({ email });
+        console.log("email:",email)
+        const admin = await AdminModel.findOne({ email:email });
         if (!admin) return { error: "admin not found" };
         return { allocatedHostel: admin.allocatedHostel as string };
     } catch {
@@ -63,7 +64,7 @@ async function resolveAllocatedHostelFromToken(token: string | undefined): Promi
 }
 
 async function cameraAllowedForHostel(cameraName: string, allocatedHostel: string): Promise<boolean> {
-    const row = await CamerasModel.findOne({ cameraName });
+    const row = await CamerasModel.findOne({ cameraName:cameraName });
     if (!row) return false;
     if (allocatedHostel === "all") return true;
     return row.hostelName === allocatedHostel;
@@ -86,6 +87,7 @@ function getLocalIp() {
 // const LAN_IP = getLocalIp();
 // announced_ip is ip of machine running sfu_server
 const LAN_IP = process.env.ANNOUNCED_IP || getLocalIp(); 
+console.log("getLocalIp:",getLocalIp())
 console.log(`[NETWORK] Mediasoup will announce IP: ${LAN_IP}`);
 
 let worker:mediasoup.types.Worker<mediasoup.types.AppData>|null=null;
@@ -275,12 +277,14 @@ async function run() {
                         consumers:mpp,
                         allocatedHostel:allocatedHostel
                     });
+                    const camDoc = await CamerasModel.findOne({ cameraName });
                     const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                         id:consumer.id,
                         kind:consumer.kind,
                         producerId:producer.id,
                         rtpParameters:consumer.rtpParameters,
-                        cameraName:cameraName
+                        cameraName:cameraName,
+                        hostelName: camDoc ? camDoc.hostelName : "Unknown Hostel"
                     }
                     console.log("/stream-started: send invitation-to-consume for ",cameraName)
                     const send_message:CustomTypes.sfu.invitationToConsumeToFrontendType={
@@ -470,12 +474,14 @@ async function run() {
                                 consumers:mpp,
                                 allocatedHostel:allocatedHostel
                             });
+                            const camDoc = await CamerasModel.findOne({ cameraName });
                             const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                                 id:consumer.id,
                                 kind:consumer.kind,
                                 producerId:producer.id,
                                 rtpParameters:consumer.rtpParameters,
-                                cameraName:cameraName
+                                cameraName:cameraName,
+                                hostelName: camDoc ? camDoc.hostelName : "Unknown Hostel"
                             }
                             console.log("ws: send invitation-to-come: for ",cameraName)
                             const send_message:CustomTypes.sfu.invitationToConsumeToFrontendType={

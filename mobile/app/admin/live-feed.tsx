@@ -1,6 +1,6 @@
 import { Link } from 'expo-router'
 import { useRef, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { styles, colors } from '../../src/ui/styles'
 
 type ViewFilter = 'all' | 'hostel-a' | 'hostel-b' | 'other'
@@ -25,7 +25,7 @@ export default function LiveFeed() {
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 24 }}>
       <View style={styles.card}>
         <Link href="/admin/live-feed-landing" asChild>
-          <Pressable style={[styles.buttonSecondary, { marginBottom: 12 }]}>
+          <Pressable style={StyleSheet.flatten([styles.buttonSecondary, { marginBottom: 12 }])}>
             <Text style={styles.buttonTextSecondary}>← Back</Text>
           </Pressable>
         </Link>
@@ -51,11 +51,6 @@ export default function LiveFeed() {
           <Link href="/admin/notifications" asChild>
             <Pressable style={styles.buttonSecondary}>
               <Text style={styles.buttonTextSecondary}>View notifications</Text>
-            </Pressable>
-          </Link>
-          <Link href="/admin/activities" asChild>
-            <Pressable style={styles.buttonSecondary}>
-              <Text style={styles.buttonTextSecondary}>View activities</Text>
             </Pressable>
           </Link>
           <Link href="/admin/past-recordings" asChild>

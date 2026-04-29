@@ -17,7 +17,6 @@ export type InviteBody = {
   host_email: string
   guest_name: string
   guest_contact_number: string
-  [key: string]: string
 }
 
 export function invite(body: InviteBody) {
@@ -27,21 +26,6 @@ export function invite(body: InviteBody) {
 // Emergencies
 export function fetchEmergencies() {
   return apiFetch<unknown>('/emergencies', { method: 'GET' })
-}
-
-// Activities
-export type DateRangeBody = { start?: string; end?: string; [key: string]: string | undefined }
-
-export function fetchRecentActivities(params: DateRangeBody) {
-  return apiFetch<unknown>('/fetch-recent-activities', { method: 'POST', json: params })
-}
-
-export function fetchTimerangeActivities(params: DateRangeBody) {
-  return apiFetch<unknown>('/fetch-timerange-activities', { method: 'POST', json: params })
-}
-
-export function getActivity(params: Record<string, string>) {
-  return apiFetch<unknown>('/get-activity', { method: 'POST', json: params })
 }
 
 // Past recordings
@@ -81,9 +65,17 @@ export function addHostel(body: AddHostelBody) {
   return apiFetch<unknown>('/add-hostel', { method: 'POST', json: body })
 }
 
-// Upload
-export function uploadManually(body: Record<string, unknown>) {
+// Manage user actions
+export function addManually(body: Record<string, unknown>) {
   return apiFetch<unknown>('/upload-manually', { method: 'POST', json: body })
+}
+
+export function editUser(body: Record<string, unknown>) {
+  return apiFetch<unknown>('/edit', { method: 'POST', json: body })
+}
+
+export function deleteUser(body: Record<string, unknown>) {
+  return apiFetch<unknown>('/delete', { method: 'POST', json: body })
 }
 
 // Notifications (previous k) - backend may implement later

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { studentSignIn } from '../api/endpoints'
 import collegeLogo from '../assets/IIT Ropar.png'
-import { layout, card, inputStyle, primaryButton, backButton, logoCircle } from '../styles/common'
+import { layout, card, inputStyle, primaryButton, secondaryButton, logoCircle, brandMark } from '../styles/common'
 
 export default function StudentSignIn() {
   const navigate = useNavigate()
@@ -38,18 +38,38 @@ export default function StudentSignIn() {
 
   return (
     <div style={layout}>
-      <div style={card}>
+      <div
+        style={{
+          ...card,
+          minHeight: '90vh',
+          position: 'relative',
+        }}
+      >
+        <Link 
+          to="/" 
+          style={{ 
+            ...secondaryButton, 
+            textDecoration: 'none',
+            position: 'absolute',
+            top: '1.5rem',
+            right: '2rem',
+          }}
+        >
+          ← Back
+        </Link>
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 0.7fr)',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
             columnGap: '3rem',
-            alignItems: 'flex-start',
+            alignItems: 'center',
+            width: '100%',
+            minHeight: '74vh',
           }}
         >
           {/* Left: form */}
           <div>
-            <Link to="/" style={backButton}>← Back</Link>
+            <div style={{ ...brandMark, marginBottom: '3rem' }}>HOSTEL SECURITY</div>
             <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>Student Sign In</h1>
             <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
               Use your registered student credentials.
@@ -87,7 +107,7 @@ export default function StudentSignIn() {
           </div>
 
           {/* Right: college logo */}
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <img src={collegeLogo} alt="College logo" style={logoCircle} />
           </div>
         </div>

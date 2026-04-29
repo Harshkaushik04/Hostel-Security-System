@@ -15,8 +15,11 @@ import WebSocket,{WebSocketServer} from "ws";
 import { createServer } from "http"
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
+import http from "http"
+import https from "https"
 import multer from "multer";
 import { parse } from "csv-parse/sync";
+
 
 dotenv.config({
   path: path.resolve(__dirname, "../.env")
@@ -259,7 +262,10 @@ app.post("/qr-data",async (req:Request,res:Response)=>{
 })
 
 //=========================== MediaMTX->node_backend recordings save ============================
-const RECORDINGS_BASE_DIR = '/home/harsh/recordings';
+const RECORDINGS_BASE_DIR = process.env.RECORDING_SAVE_PATH;
+if(!RECORDINGS_BASE_DIR){
+    throw new Error("RECORDING_SAVE_PATH not present in .env")
+}
 const recordingProcesses = new Map<string, ChildProcess>();
 
 // Make sure base directory exists
@@ -267,16 +273,50 @@ if (!fs.existsSync(RECORDINGS_BASE_DIR)) {
     fs.mkdirSync(RECORDINGS_BASE_DIR, { recursive: true });
 }
 
-/*
-  1. START RECORDING (Save from MediaMTX)
-  Body: { cameraName: "camera1" }
- */
-app.post('/recordings/start', (req: Request, res: Response) => {
-    const cameraName = req.query.cameraName as string;
-    if (!cameraName) return res.status(400).json({ error: 'cameraName is required' });
+type MediaMTXPath = {
+    name: string
+    ready?: boolean
+    online?: boolean
+    available?: boolean
+}
+type MediaMTXPathsListResponse = {
+    items?: MediaMTXPath[]
+}
+
+function httpGetJson(url: string, timeoutMs = 2500): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+        const isHttps = url.startsWith("https://")
+        const mod = isHttps ? https : http
+        const req = mod.get(url, (res) => {
+            let body = ""
+            res.setEncoding("utf8")
+            res.on("data", (chunk) => (body += chunk))
+            res.on("end", () => {
+                const ok = res.statusCode && res.statusCode >= 200 && res.statusCode < 300
+                if (!ok) {
+                    return reject(
+                        new Error(`GET ${url} failed: ${res.statusCode ?? "no_status"} ${body.slice(0, 300)}`)
+                    )
+                }
+                try {
+                    resolve(JSON.parse(body))
+                } catch (e) {
+                    reject(new Error(`GET ${url} invalid json: ${e instanceof Error ? e.message : String(e)}`))
+                }
+            })
+        })
+        req.on("error", reject)
+        req.setTimeout(timeoutMs, () => {
+            req.destroy(new Error(`GET ${url} timeout after ${timeoutMs}ms`))
+        })
+    })
+}
+
+function startRecordingForCamera(cameraName: string): { ok: true } | { ok: false; error: string } {
+    if (!cameraName) return { ok: false, error: "cameraName is required" }
 
     if (recordingProcesses.has(cameraName)) {
-        return res.status(400).json({ error: `Recording already running for ${cameraName}` });
+        return { ok: false, error: `Recording already running for ${cameraName}` }
     }
 
     const cameraDir = path.join(RECORDINGS_BASE_DIR, cameraName);
@@ -302,7 +342,7 @@ app.post('/recordings/start', (req: Request, res: Response) => {
         '-strftime', '1',
         outputPattern
     ];
-    let ffmpeg:ChildProcess = spawn('ffmpeg', ffmpegArgs);
+    const ffmpeg: ChildProcess = spawn('ffmpeg', ffmpegArgs);
     recordingProcesses.set(cameraName, ffmpeg);
 
     ffmpeg.stderr?.on('data', (data) => {
@@ -321,7 +361,60 @@ app.post('/recordings/start', (req: Request, res: Response) => {
         recordingProcesses.delete(cameraName);
     });
 
-    return res.json({ message: `Recording started for ${cameraName}` });
+    return { ok: true }
+}
+
+function stopRecordingForCamera(cameraName: string): { ok: true } | { ok: false; error: string } {
+    if (!cameraName) return { ok: false, error: "cameraName is required" }
+
+    const ffmpegProcess = recordingProcesses.get(cameraName);
+    if (!ffmpegProcess) {
+        return { ok: false, error: 'No active recording found' }
+    }
+
+    // SIGINT allows FFmpeg to safely finalize the MP4 file before closing
+    ffmpegProcess.kill('SIGINT');
+    recordingProcesses.delete(cameraName);
+    return { ok: true }
+}
+
+async function syncRecordingsFromMediaMTX(): Promise<void> {
+    const host = process.env.MEDIAMTX_IP || "localhost"
+    const url = `http://${host}:9997/v3/paths/list`
+
+    try {
+        const json = (await httpGetJson(url)) as MediaMTXPathsListResponse
+        const items = Array.isArray(json?.items) ? json.items : []
+
+        const active = items.filter((p) => p && typeof p.name === "string" && (p.ready === true || p.online === true || p.available === true))
+        if (active.length === 0) {
+            console.log(`[recordings-sync] no active MediaMTX paths found`)
+            return
+        }
+
+        console.log(`[recordings-sync] active MediaMTX paths: ${active.map((p) => p.name).join(", ")}`)
+        for (const p of active) {
+            const r = startRecordingForCamera(p.name)
+            if (!r.ok) {
+                console.log(`[recordings-sync] skip ${p.name}: ${r.error}`)
+            } else {
+                console.log(`[recordings-sync] recording started for ${p.name}`)
+            }
+        }
+    } catch (e) {
+        console.log(`[recordings-sync] failed to query MediaMTX (${url}): ${e instanceof Error ? e.message : String(e)}`)
+    }
+}
+
+/*
+  1. START RECORDING (Save from MediaMTX)
+  Body: { cameraName: "camera1" }
+ */
+app.post('/recordings/start', (req: Request, res: Response) => {
+    const cameraName = req.query.cameraName as string;
+    const r = startRecordingForCamera(cameraName)
+    if (!r.ok) return res.status(400).json({ error: r.error })
+    return res.json({ message: `Recording started for ${cameraName}` })
 });
 
 /*
@@ -330,17 +423,9 @@ app.post('/recordings/start', (req: Request, res: Response) => {
  */
 app.post('/recordings/stop', (req: Request, res: Response) => {
     const cameraName  = req.query.cameraName as string;
-    const ffmpegProcess = recordingProcesses.get(cameraName);
-
-    if (!ffmpegProcess) {
-        return res.status(400).json({ error: 'No active recording found' });
-    }
-
-    // SIGINT allows FFmpeg to safely finalize the MP4 file before closing
-    ffmpegProcess.kill('SIGINT');
-    recordingProcesses.delete(cameraName);
-
-    return res.json({ message: `Recording stopped for ${cameraName}` });
+    const r = stopRecordingForCamera(cameraName)
+    if (!r.ok) return res.status(400).json({ error: r.error })
+    return res.json({ message: `Recording stopped for ${cameraName}` })
 });
 
 //=========================== Frontend->node_backend recordings quering ============================
@@ -842,6 +927,82 @@ app.post("/add-hostel",async (req:Request,res:Response)=>{
             })
         }
     }
+})
+
+app.post("/edit-hostel", async (req: Request, res: Response) => {
+    const oldName = String((req.body as { hostel_name?: unknown })?.hostel_name ?? "").trim()
+    const newName = String((req.body as { new_hostel_name?: unknown })?.new_hostel_name ?? "").trim()
+    if (!oldName || !newName) {
+        return res.send({
+            approved: false,
+            error: "hostel_name and new_hostel_name are required",
+        })
+    }
+    if (oldName === newName) {
+        return res.send({
+            approved: false,
+            error: "new hostel name must be different",
+        })
+    }
+    const row = await HostelsModel.findOne({ hostel_name: oldName })
+    if (!row) {
+        return res.send({
+            approved: false,
+            error: "hostel not found",
+        })
+    }
+    const dup = await HostelsModel.findOne({ hostel_name: newName })
+    if (dup) {
+        return res.send({
+            approved: false,
+            error: "new hostel name already exists",
+        })
+    }
+
+    row.hostel_name = newName
+    await row.save()
+    await UserModel.updateMany({ hostel_name: oldName }, { $set: { hostel_name: newName } })
+    await CamerasModel.updateMany({ hostelName: oldName }, { $set: { hostelName: newName } })
+    await VisitorsModel.updateMany({ hostel_name: oldName }, { $set: { hostel_name: newName } })
+    await AdminModel.updateMany({ allocatedHostel: oldName }, { $set: { allocatedHostel: newName } })
+
+    return res.send({
+        approved: true,
+    })
+})
+
+app.post("/delete-hostel", async (req: Request, res: Response) => {
+    const hostelName = String((req.body as { hostel_name?: unknown })?.hostel_name ?? "").trim()
+    if (!hostelName) {
+        return res.send({
+            approved: false,
+            error: "hostel_name is required",
+        })
+    }
+
+    const row = await HostelsModel.findOne({ hostel_name: hostelName })
+    if (!row) {
+        return res.send({
+            approved: false,
+            error: "hostel not found",
+        })
+    }
+
+    const userCount = await UserModel.countDocuments({ hostel_name: hostelName })
+    const cameraCount = await CamerasModel.countDocuments({ hostelName: hostelName })
+    const adminCount = await AdminModel.countDocuments({ allocatedHostel: hostelName })
+    if (userCount > 0 || cameraCount > 0 || adminCount > 0) {
+        return res.send({
+            approved: false,
+            error: "hostel is in use by students/admins/cameras; reassign or delete them first",
+        })
+    }
+
+    await HostelsModel.deleteOne({ hostel_name: hostelName })
+    await VisitorsModel.deleteMany({ hostel_name: hostelName })
+    return res.send({
+        approved: true,
+    })
 })
 
 app.post("/get-hostels-list",async(req:Request,res:Response)=>{
@@ -1690,4 +1851,11 @@ const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 server.listen(PORT,  () => {
   console.log(`Server running on port ${PORT}`);
+  // If node backend restarts while cameras are already publishing, MediaMTX won't re-trigger runOnReady.
+  // So we sync from MediaMTX API at startup to auto-start recordings for currently active cameras.
+  setTimeout(() => {
+      syncRecordingsFromMediaMTX().catch((e) => {
+          console.log(`[recordings-sync] unexpected error: ${e instanceof Error ? e.message : String(e)}`)
+      })
+  }, 750)
 });

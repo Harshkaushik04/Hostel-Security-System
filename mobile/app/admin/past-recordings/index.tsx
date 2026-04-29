@@ -1,6 +1,6 @@
 import { Link, router } from 'expo-router'
 import { useState } from 'react'
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { styles } from '../../../src/ui/styles'
 
 type RecordingItem = { id: string; title: string; start?: string; end?: string }
@@ -31,7 +31,7 @@ export default function PastRecordingsLanding() {
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 24 }}>
       <View style={styles.card}>
         <Link href="/admin/live-feed-landing" asChild>
-          <Pressable style={[styles.buttonSecondary, { marginBottom: 12 }]}>
+          <Pressable style={StyleSheet.flatten([styles.buttonSecondary, { marginBottom: 12 }])}>
             <Text style={styles.buttonTextSecondary}>← Back</Text>
           </Pressable>
         </Link>
@@ -61,7 +61,7 @@ export default function PastRecordingsLanding() {
             <Text style={styles.buttonTextPrimary}>{loading ? 'Fetching…' : 'Fetch time range'}</Text>
           </Pressable>
           <Pressable style={styles.buttonSecondary} onPress={fetchLast24} disabled={loading}>
-            <Text style={styles.buttonTextSecondary}>Last 24h</Text>
+            <Text style={styles.buttonTextSecondary}>LAST 24H</Text>
           </Pressable>
         </View>
 

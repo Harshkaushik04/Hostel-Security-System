@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { addManually, editUser, deleteUser, uploadStudentCsv, uploadAdminCsv, type AdminPrivilegeApiValue } from '../api/endpoints'
-import { layout, card, primaryButton, secondaryButton, inputStyle } from '../styles/common'
+import { addManually, editUser, deleteUser, uploadStudentCsv, uploadAdminCsv, getHostelsList, getHostelList, getAdminList, type AdminPrivilegeApiValue } from '../api/endpoints'
+import collegeLogo from '../assets/IIT Ropar.png'
+import { layout, card, primaryButton, secondaryButton, inputStyle, logoCircle } from '../styles/common'
 
-export default function ManageEdit() {
-  const [entityType, setEntityType] = useState<'student' | 'admin'>('student')
+type ManageEditProps = {
+  fixedEntityType?: 'student' | 'admin'
+}
+
+export default function ManageEdit({ fixedEntityType }: ManageEditProps) {
+  const [entityType, setEntityType] = useState<'student' | 'admin'>(fixedEntityType ?? 'student')
   const [addName, setAddName] = useState('')
   const [addEmail, setAddEmail] = useState('')
   const [addPassword, setAddPassword] = useState('')
@@ -31,7 +36,11 @@ export default function ManageEdit() {
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [csvResult, setCsvResult] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hostels, setHostels] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [listData, setListData] = useState<{ name: string; email: string; id?: string; hostel: string; privilege?: string }[]>([])
+  const [loadingList, setLoadingList] = useState(false)
+  const [listFetchedFor, setListFetchedFor] = useState<'student' | 'admin' | null>(null)
 
   useEffect(() => {
     setEditTarget(null)
@@ -46,7 +55,27 @@ export default function ManageEdit() {
     }
     setCsvFile(null)
     setCsvResult('')
+    setListData([])
+    setListFetchedFor(null)
   }, [entityType])
+
+  useEffect(() => {
+    if (fixedEntityType) {
+      setEntityType(fixedEntityType)
+    }
+  }, [fixedEntityType])
+
+  useEffect(() => {
+    const loadHostels = async () => {
+      try {
+        const res = (await getHostelsList({})) as { hostelsList?: string[] }
+        setHostels(Array.isArray(res?.hostelsList) ? res.hostelsList : [])
+      } catch {
+        setHostels([])
+      }
+    }
+    loadHostels()
+  }, [])
 
   const resolveBackendError = (res: unknown): string => {
     if (!res || typeof res !== 'object') return ''
@@ -253,28 +282,77 @@ export default function ManageEdit() {
     }
   }
 
+  const handleLoadList = async () => {
+    setLoadingList(true)
+    setError('')
+    try {
+      const newList: { name: string; email: string; id?: string; hostel: string; privilege?: string }[] = []
+      if (entityType === 'student') {
+        const promises = hostels.map(h => getHostelList({ hostel_name: h, start: 1, num_students: 1000 }).then(res => ({ h, res: res as { studentsList?: string[][] } })).catch(() => ({ h, res: {} })))
+        const results = await Promise.all(promises)
+        for (const { h, res } of results) {
+          if (res?.studentsList) {
+            for (const row of res.studentsList) {
+              newList.push({ name: row[0] || '', id: row[1] || '', email: row[2] || '', hostel: h })
+            }
+          }
+        }
+      } else {
+        const privileges: AdminPrivilegeApiValue[] = ['super_user', 'top_privelege', 'gaurd']
+        const promises = privileges.map(priv => getAdminList({ admin_privelege_name: priv, start: 1, num_users: 1000 }).then(res => ({ priv, res: res as { usersList?: string[][] } })).catch(() => ({ priv, res: {} })))
+        const results = await Promise.all(promises)
+        for (const { priv, res } of results) {
+          if (res?.usersList) {
+            for (const row of res.usersList) {
+              newList.push({ name: row[0] || '', email: row[1] || '', hostel: row[2] || '', privilege: priv })
+            }
+          }
+        }
+      }
+      setListData(newList)
+      setListFetchedFor(entityType)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch list')
+    } finally {
+      setLoadingList(false)
+    }
+  }
+
   return (
     <div style={layout}>
       <div style={card}>
-        <Link to="/admin/manage" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back to Manage list</Link>
-        <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>
-          Manage students / admin — Add, delete, edit
-        </h1>
-        <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
-          [express] /add-manually, /edit, /delete, /upload-csv
-        </p>
-        {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
-        <div style={{ display: 'grid', gap: '1.5rem' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 0.7fr)',
+            columnGap: '3rem',
+            alignItems: 'flex-start',
+          }}
+        >
+          <div>
+            <Link to="/admin/manage" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back to Manage list</Link>
+            <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>
+              Manage {entityType} — Add, delete, edit
+            </h1>
+            <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
+              [express] /upload-manually, /edit, /delete, /upload-csv
+            </p>
+            {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
+            <div style={{ display: 'grid', gap: '1.5rem' }}>
           <section>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Target type</h2>
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-              <button type="button" style={entityType === 'student' ? primaryButton : secondaryButton} onClick={() => setEntityType('student')}>
-                Student
-              </button>
-              <button type="button" style={entityType === 'admin' ? primaryButton : secondaryButton} onClick={() => setEntityType('admin')}>
-                Admin
-              </button>
-            </div>
+            {!fixedEntityType && (
+              <>
+                <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Target type</h2>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                  <button type="button" style={entityType === 'student' ? primaryButton : secondaryButton} onClick={() => setEntityType('student')}>
+                    Student
+                  </button>
+                  <button type="button" style={entityType === 'admin' ? primaryButton : secondaryButton} onClick={() => setEntityType('admin')}>
+                    Admin
+                  </button>
+                </div>
+              </>
+            )}
           </section>
           <section>
             <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Add {entityType}</h2>
@@ -285,7 +363,16 @@ export default function ManageEdit() {
               {entityType === 'student' ? (
                 <>
                   <input type="text" style={inputStyle} placeholder="Entry number" value={addEntryNumber} onChange={(e) => setAddEntryNumber(e.target.value)} />
-                  <input type="text" style={inputStyle} placeholder="Hostel name" value={addHostelName} onChange={(e) => setAddHostelName(e.target.value)} />
+                  <select
+                    style={inputStyle}
+                    value={addHostelName}
+                    onChange={(e) => setAddHostelName(e.target.value)}
+                  >
+                    <option value="">Select hostel</option>
+                    {hostels.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
                 </>
               ) : (
                 <>
@@ -294,7 +381,17 @@ export default function ManageEdit() {
                     <option value="top_privelege">top_privelege</option>
                     <option value="super_user">super_user</option>
                   </select>
-                  <input type="text" style={inputStyle} placeholder="Allocated hostel" value={addAllocatedHostel} onChange={(e) => setAddAllocatedHostel(e.target.value)} />
+                  <select
+                    style={inputStyle}
+                    value={addAllocatedHostel}
+                    onChange={(e) => setAddAllocatedHostel(e.target.value)}
+                  >
+                    <option value="">Select allocated hostel</option>
+                    <option value="all">all</option>
+                    {hostels.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
                 </>
               )}
             </div>
@@ -327,7 +424,7 @@ export default function ManageEdit() {
             </div>
             {editTarget && (
               <p style={{ color: '#9ca3af', marginBottom: '0.75rem' }}>
-                Selected student: {editTarget.filterBy} = {editTarget.value}
+                Selected {entityType}: {editTarget.filterBy} = {editTarget.value}
               </p>
             )}
             <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
@@ -337,7 +434,16 @@ export default function ManageEdit() {
               {entityType === 'student' ? (
                 <>
                   <input type="text" style={inputStyle} placeholder="New entry number" value={editEntryNumber} onChange={(e) => setEditEntryNumber(e.target.value)} />
-                  <input type="text" style={inputStyle} placeholder="New hostel name" value={editHostelName} onChange={(e) => setEditHostelName(e.target.value)} />
+                  <select
+                    style={inputStyle}
+                    value={editHostelName}
+                    onChange={(e) => setEditHostelName(e.target.value)}
+                  >
+                    <option value="">Select hostel</option>
+                    {hostels.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
                 </>
               ) : (
                 <>
@@ -346,7 +452,17 @@ export default function ManageEdit() {
                     <option value="top_privelege">top_privelege</option>
                     <option value="super_user">super_user</option>
                   </select>
-                  <input type="text" style={inputStyle} placeholder="Allocated hostel" value={editAllocatedHostel} onChange={(e) => setEditAllocatedHostel(e.target.value)} />
+                  <select
+                    style={inputStyle}
+                    value={editAllocatedHostel}
+                    onChange={(e) => setEditAllocatedHostel(e.target.value)}
+                  >
+                    <option value="">Select allocated hostel</option>
+                    <option value="all">all</option>
+                    {hostels.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
                 </>
               )}
             </div>
@@ -379,7 +495,7 @@ export default function ManageEdit() {
             </div>
             {deleteTarget && (
               <p style={{ color: '#9ca3af', marginBottom: '0.75rem' }}>
-                Selected student: {deleteTarget.filterBy} = {deleteTarget.value}
+                Selected {entityType}: {deleteTarget.filterBy} = {deleteTarget.value}
               </p>
             )}
             <button type="button" style={primaryButton} onClick={handleDeleteUser} disabled={loading}>Delete</button>
@@ -400,6 +516,48 @@ export default function ManageEdit() {
             </button>
             {csvResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8, overflow: 'auto' }}>{csvResult}</pre>}
           </section>
+          <section>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>View {entityType}s List</span>
+              <button type="button" style={{ ...secondaryButton, padding: '0.5rem 1rem', fontSize: '0.9rem' }} onClick={handleLoadList} disabled={loadingList}>
+                {loadingList ? 'Loading...' : 'Load List'}
+              </button>
+            </h2>
+            {listFetchedFor === entityType && listData.length > 0 && (
+              <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: 8, overflowX: 'auto' }}>
+                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                      <th style={{ padding: '0.5rem' }}>Name</th>
+                      <th style={{ padding: '0.5rem' }}>Email</th>
+                      {entityType === 'student' && <th style={{ padding: '0.5rem' }}>Entry Number</th>}
+                      <th style={{ padding: '0.5rem' }}>Hostel</th>
+                      {entityType === 'admin' && <th style={{ padding: '0.5rem' }}>Privilege</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listData.map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '0.5rem' }}>{item.name}</td>
+                        <td style={{ padding: '0.5rem' }}>{item.email}</td>
+                        {entityType === 'student' && <td style={{ padding: '0.5rem' }}>{item.id}</td>}
+                        <td style={{ padding: '0.5rem' }}>{item.hostel}</td>
+                        {entityType === 'admin' && <td style={{ padding: '0.5rem' }}>{item.privilege}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {listFetchedFor === entityType && listData.length === 0 && !loadingList && (
+              <p style={{ color: '#9ca3af', marginTop: '0.5rem' }}>No {entityType}s found.</p>
+            )}
+          </section>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+            <img src={collegeLogo} alt="College logo" style={logoCircle} />
+          </div>
         </div>
       </div>
     </div>

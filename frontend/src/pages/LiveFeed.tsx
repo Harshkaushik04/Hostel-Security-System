@@ -3,37 +3,30 @@ import { Link } from 'react-router-dom'
 import { Device } from 'mediasoup-client'
 import { CustomSchemas, CustomTypes } from '@my-app/shared'
 import { layout, card, secondaryButton, primaryButton, inputStyle } from '../styles/common'
+import { getCamerasList } from '../api/endpoints'
 
 type StreamItem = {
   id: string
   producerId: string
   label: string
   stream: MediaStream
+  cameraName: string
+  hostelName?: string
 }
 
-const MIN_CAMERA_SLOTS = 1
-const MAX_CAMERA_SLOTS = 64
-const DEFAULT_CAMERA_SLOTS = 4
 
-function clampCameraSlots(n: number): number {
-  if (!Number.isFinite(n)) return DEFAULT_CAMERA_SLOTS
-  return Math.min(MAX_CAMERA_SLOTS, Math.max(MIN_CAMERA_SLOTS, Math.round(n)))
-}
 
 export default function LiveFeed() {
   const [fullscreenId, setFullscreenId] = useState<string | null>(null)
   const [streams, setStreams] = useState<StreamItem[]>([])
-  
-  /** How many camera tiles to show (camera1 … cameraN). */
-  const [maxCameraSlots, setMaxCameraSlots] = useState(DEFAULT_CAMERA_SLOTS)
-  const maxCameraSlotsRef = useRef(DEFAULT_CAMERA_SLOTS)
-  
+
+
   const [focusCameraInput, setFocusCameraInput] = useState('')
   const [focusHint, setFocusHint] = useState('')
   const [connected, setConnected] = useState(false)
   const [buttonPressed, setButtonPressed] = useState(false)
   const [error, setError] = useState('')
-  
+
   const sfuWsRef = useRef<WebSocket | null>(null)
   const deviceRef = useRef<Device | null>(null)
   const recvTransportRef = useRef<any>(null)
@@ -41,33 +34,13 @@ export default function LiveFeed() {
   const tileRefsRef = useRef<Map<string, HTMLDivElement>>(new Map())
   const deviceLoadedRef = useRef(false)
 
-  useEffect(() => {
-    maxCameraSlotsRef.current = maxCameraSlots
-  }, [maxCameraSlots])
 
-  /** If user reduces slots below the currently focused camera, exit focus. */
-  useEffect(() => {
-    if (!fullscreenId) return
-    if (fullscreenId.startsWith('cam-')) {
-      const n = Number(fullscreenId.slice(4))
-      if (Number.isFinite(n) && n > maxCameraSlots) {
-        setFullscreenId(null)
-        setFocusHint(`Cleared focus: only ${maxCameraSlots} slot(s) configured.`)
-      }
-    } else if (fullscreenId.startsWith('placeholder-')) {
-      const idx = Number(fullscreenId.slice('placeholder-'.length))
-      if (Number.isFinite(idx) && idx >= maxCameraSlots) {
-        setFullscreenId(null)
-        setFocusHint(`Cleared focus: only ${maxCameraSlots} slot(s) configured.`)
-      }
-    }
-  }, [maxCameraSlots, fullscreenId])
 
   const attachStream = useCallback((id: string, stream: MediaStream) => {
     const video = videoRefsRef.current.get(id)
     if (video && stream) {
       video.srcObject = stream
-      video.play().catch(() => {})
+      video.play().catch(() => { })
     }
   }, [])
 
@@ -148,7 +121,7 @@ export default function LiveFeed() {
           }
           ws.send(JSON.stringify(send_message))
         } else if (json_message.type === 'invitation-to-consume') {
-          const { cameraName, producerId } = json_message.params
+          const { cameraName, producerId, hostelName } = json_message.params
           const cameraNumber = Number(cameraName.slice(6))
 
           if (!recvTransportRef.current) return
@@ -156,12 +129,7 @@ export default function LiveFeed() {
 
           const cons = await consumerTransport.consume(json_message.params as any)
 
-          const withinUiLimit =
-            Number.isFinite(cameraNumber) &&
-            cameraNumber >= 1 &&
-            cameraNumber <= maxCameraSlotsRef.current
-
-          if (withinUiLimit) {
+          if (Number.isFinite(cameraNumber) && cameraNumber >= 1) {
             const itemId = `cam-${cameraNumber}`
             const stream = new MediaStream([cons.track])
 
@@ -172,21 +140,14 @@ export default function LiveFeed() {
                 producerId,
                 label: `Camera ${cameraNumber}`,
                 stream,
+                cameraName,
+                hostelName,
               }
               return [...prev, item]
             })
 
             window.setTimeout(() => {
               attachStream(itemId, stream)
-              const send_message: CustomTypes.sfu.consumerResumeToBackendType = {
-                type: 'consumer-resume',
-                cameraName,
-              }
-              ws.send(JSON.stringify(send_message))
-            }, 50)
-          } else {
-            // Still resume consumers we don't show, so SFU doesn't leave them paused forever.
-            window.setTimeout(() => {
               const send_message: CustomTypes.sfu.consumerResumeToBackendType = {
                 type: 'consumer-resume',
                 cameraName,
@@ -275,8 +236,8 @@ export default function LiveFeed() {
   const applyFocusCamera = () => {
     setFocusHint('')
     const n = parseInt(focusCameraInput.trim(), 10)
-    if (!Number.isFinite(n) || n < MIN_CAMERA_SLOTS || n > maxCameraSlots) {
-      setFocusHint(`Enter a number between ${MIN_CAMERA_SLOTS} and ${maxCameraSlots}.`)
+    if (!Number.isFinite(n) || n < 1) {
+      setFocusHint(`Enter a valid camera number.`)
       return
     }
     const camId = `cam-${n}`
@@ -285,23 +246,11 @@ export default function LiveFeed() {
       setFullscreenId(camId)
       return
     }
-    if (streams.length === 0) {
-      setFullscreenId(`placeholder-${n - 1}`)
-      return
-    }
     setFocusHint(`Camera ${n} has no stream yet.`)
   }
 
-  const visibleStreams = streams.filter((s) => {
-    const n = Number(s.id.replace(/^cam-/, ''))
-    return Number.isFinite(n) && n >= 1 && n <= maxCameraSlots
-  })
-
-  const displayStreams = visibleStreams.length > 0 ? visibleStreams : []
-  const placeholders =
-    streams.length === 0
-      ? Array.from({ length: maxCameraSlots }, (_, i) => `Camera ${i + 1}`)
-      : []
+  const displayStreams = streams
+  const placeholders = streams.length === 0 ? ['Waiting for video streams…'] : []
 
   return (
     <div style={layout}>
@@ -309,8 +258,7 @@ export default function LiveFeed() {
         <Link to="/admin/live-feed-landing" style={{ ...secondaryButton, textDecoration: 'none' }}>← Back</Link>
         <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '1rem', marginBottom: '0.5rem' }}>Live feed</h1>
         <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1rem' }}>
-          WebRTC streams via SFU. Click Receive video to connect. Double-click a tile to expand in the page; double-click
-          again to exit. Use Full screen for browser fullscreen — double-click the video (or tile) to exit that mode.
+          Use Full screen for browser fullscreen — double-click the video (or tile) to exit that mode.
         </p>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -327,29 +275,7 @@ export default function LiveFeed() {
           </button>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '0.75rem',
-            alignItems: 'center',
-            marginBottom: '0.75rem',
-          }}
-        >
-          <label style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Number of camera slots</label>
-          <input
-            type="number"
-            min={MIN_CAMERA_SLOTS}
-            max={MAX_CAMERA_SLOTS}
-            value={maxCameraSlots}
-            onChange={(e) => setMaxCameraSlots(clampCameraSlots(Number(e.target.value)))}
-            style={{ ...inputStyle, width: 80 }}
-            title="How many cameras to show (camera1 … cameraN)"
-          />
-          <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
-            Showing slots 1–{maxCameraSlots} (matches SFU paths camera1 … camera{maxCameraSlots})
-          </span>
-        </div>
+
 
         <div
           style={{
@@ -363,8 +289,7 @@ export default function LiveFeed() {
           <label style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Focus camera #</label>
           <input
             type="number"
-            min={MIN_CAMERA_SLOTS}
-            max={maxCameraSlots}
+            min={1}
             value={focusCameraInput}
             onChange={(e) => setFocusCameraInput(e.target.value)}
             onKeyDown={(e) => {
@@ -435,7 +360,7 @@ export default function LiveFeed() {
                     if (el) {
                       videoRefsRef.current.set(item.id, el)
                       el.srcObject = item.stream
-                      el.play().catch(() => {})
+                      el.play().catch(() => { })
                     }
                   }}
                   onDoubleClick={(e) => {
@@ -460,7 +385,12 @@ export default function LiveFeed() {
                     fontSize: '0.85rem',
                   }}
                 >
-                  {item.label} — double-click to expand / exit browser fullscreen
+                  <div style={{ fontWeight: 600 }}>
+                    {item.label} {item.hostelName ? `— ${item.hostelName}` : ''}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                    Double-click to expand / exit browser fullscreen
+                  </div>
                 </div>
                 <button
                   type="button"

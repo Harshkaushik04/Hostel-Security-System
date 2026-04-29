@@ -1,5 +1,5 @@
 import { Link, router } from 'expo-router'
-import { Pressable, Text, View } from 'react-native'
+import { Image, Pressable, Text, View } from 'react-native'
 import { clearToken } from '../../src/api/token'
 import { styles } from '../../src/ui/styles'
 
@@ -10,37 +10,43 @@ export default function AdminLanding() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={styles.screenCentered}>
       <View style={styles.card}>
-        <View style={[styles.row, { justifyContent: 'space-between' }]}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Admin Console</Text>
-            <Text style={styles.subtitle}>Choose an option below.</Text>
+            <Text style={styles.subtitle}></Text>
           </View>
           <Pressable style={styles.buttonSecondary} onPress={logout}>
-            <Text style={styles.buttonTextSecondary}>Logout</Text>
+            <Text style={styles.buttonTextSecondary}>LOGOUT</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.logoWrap}>
+          <View style={[styles.logoCircle, { width: 170, height: 170, borderRadius: 85 }]}>
+            <Image source={require('../../assets/icon.png')} style={[styles.logoImage, { width: 140, height: 140 }]} />
+          </View>
         </View>
 
         <View style={{ gap: 10 }}>
           <Link href="/admin/live-feed-landing" asChild>
             <Pressable style={styles.buttonPrimary}>
-              <Text style={styles.buttonTextPrimary}>Live feed / recordings / activities</Text>
+              <Text style={styles.buttonTextPrimary}>LIVE FEED / RECORDINGS</Text>
             </Pressable>
           </Link>
           <Link href="/admin/manage" asChild>
             <Pressable style={styles.buttonSecondary}>
-              <Text style={styles.buttonTextSecondary}>Manage students / admin list</Text>
+              <Text style={styles.buttonTextSecondary}>MANAGE STUDENTS / ADMIN</Text>
             </Pressable>
           </Link>
           <Link href="/admin/notifications" asChild>
             <Pressable style={styles.buttonSecondary}>
-              <Text style={styles.buttonTextSecondary}>Notifications</Text>
+              <Text style={styles.buttonTextSecondary}>NOTIFICATIONS</Text>
             </Pressable>
           </Link>
           <Link href="/admin/emergencies" asChild>
             <Pressable style={styles.buttonSecondary}>
-              <Text style={styles.buttonTextSecondary}>Emergencies</Text>
+              <Text style={styles.buttonTextSecondary}>EMERGENCIES</Text>
             </Pressable>
           </Link>
         </View>
