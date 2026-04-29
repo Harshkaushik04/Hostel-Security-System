@@ -25,15 +25,22 @@ export default function LiveFeed() {
   const [focusHint, setFocusHint] = useState('')
 
   useEffect(() => {
-    getCamerasList().then((res) => {
-      if ('cameras' in res && res.cameras) {
-        const map: Record<string, string> = {}
-        for (const cam of res.cameras) {
-          map[cam.cameraName] = cam.hostelName
+    getCamerasList()
+      .then((res) => {
+        if ('cameras' in res && Array.isArray(res.cameras)) {
+          const map: Record<string, string> = {}
+          for (const cam of res.cameras) {
+            map[cam.cameraName] = cam.hostelName
+          }
+          console.log('LiveFeed loaded camera map:', map)
+          setCameraMap(map)
+        } else {
+          console.warn('LiveFeed getCamerasList returned unexpected response:', res)
         }
-        setCameraMap(map)
-      }
-    }).catch(() => {})
+      })
+      .catch((err) => {
+        console.error('LiveFeed failed to fetch cameras list:', err)
+      })
   }, [])
   const [connected, setConnected] = useState(false)
   const [buttonPressed, setButtonPressed] = useState(false)
@@ -396,9 +403,8 @@ export default function LiveFeed() {
                     fontSize: '0.85rem',
                   }}
                 >
-                  <div style={{ fontWeight: 600 }}>{item.label}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginBottom: 2 }}>
-                    {cameraMap[item.cameraName] || 'Unknown Hostel'}
+                  <div style={{ fontWeight: 600 }}>
+                    {item.label} {cameraMap[item.cameraName] ? `— ${cameraMap[item.cameraName]}` : ''}
                   </div>
                   <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
                     Double-click to expand / exit browser fullscreen
