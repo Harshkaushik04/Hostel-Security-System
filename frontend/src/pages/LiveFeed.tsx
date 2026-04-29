@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom'
 import { Device } from 'mediasoup-client'
 import { CustomSchemas, CustomTypes } from '@my-app/shared'
 import { layout, card, secondaryButton, primaryButton, inputStyle } from '../styles/common'
+import { getCamerasList } from '../api/endpoints'
 
 type StreamItem = {
   id: string
   producerId: string
   label: string
   stream: MediaStream
+  cameraName: string
 }
 
 
@@ -18,8 +20,21 @@ export default function LiveFeed() {
   const [streams, setStreams] = useState<StreamItem[]>([])
 
 
+  const [cameraMap, setCameraMap] = useState<Record<string, string>>({})
   const [focusCameraInput, setFocusCameraInput] = useState('')
   const [focusHint, setFocusHint] = useState('')
+
+  useEffect(() => {
+    getCamerasList().then((res) => {
+      if ('cameras' in res && res.cameras) {
+        const map: Record<string, string> = {}
+        for (const cam of res.cameras) {
+          map[cam.cameraName] = cam.hostelName
+        }
+        setCameraMap(map)
+      }
+    }).catch(() => {})
+  }, [])
   const [connected, setConnected] = useState(false)
   const [buttonPressed, setButtonPressed] = useState(false)
   const [error, setError] = useState('')
@@ -137,6 +152,7 @@ export default function LiveFeed() {
                 producerId,
                 label: `Camera ${cameraNumber}`,
                 stream,
+                cameraName,
               }
               return [...prev, item]
             })
@@ -380,7 +396,13 @@ export default function LiveFeed() {
                     fontSize: '0.85rem',
                   }}
                 >
-                  {item.label} — double-click to expand / exit browser fullscreen
+                  <div style={{ fontWeight: 600 }}>{item.label}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginBottom: 2 }}>
+                    {cameraMap[item.cameraName] || 'Unknown Hostel'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                    Double-click to expand / exit browser fullscreen
+                  </div>
                 </div>
                 <button
                   type="button"
