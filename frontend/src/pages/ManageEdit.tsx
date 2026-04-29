@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { addManually, editUser, deleteUser, uploadStudentCsv, uploadAdminCsv, getHostelsList, type AdminPrivilegeApiValue } from '../api/endpoints'
+import { addManually, editUser, deleteUser, uploadStudentCsv, uploadAdminCsv, getHostelsList, getHostelList, getAdminList, type AdminPrivilegeApiValue } from '../api/endpoints'
 import collegeLogo from '../assets/IIT Ropar.png'
 import { layout, card, primaryButton, secondaryButton, inputStyle, logoCircle } from '../styles/common'
 
@@ -38,6 +38,9 @@ export default function ManageEdit({ fixedEntityType }: ManageEditProps) {
   const [loading, setLoading] = useState(false)
   const [hostels, setHostels] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [listData, setListData] = useState<{ name: string; email: string; id?: string; hostel: string; privilege?: string }[]>([])
+  const [loadingList, setLoadingList] = useState(false)
+  const [listFetchedFor, setListFetchedFor] = useState<'student' | 'admin' | null>(null)
 
   useEffect(() => {
     setEditTarget(null)
@@ -52,6 +55,8 @@ export default function ManageEdit({ fixedEntityType }: ManageEditProps) {
     }
     setCsvFile(null)
     setCsvResult('')
+    setListData([])
+    setListFetchedFor(null)
   }, [entityType])
 
   useEffect(() => {
@@ -277,6 +282,42 @@ export default function ManageEdit({ fixedEntityType }: ManageEditProps) {
     }
   }
 
+  const handleLoadList = async () => {
+    setLoadingList(true)
+    setError('')
+    try {
+      const newList: { name: string; email: string; id?: string; hostel: string; privilege?: string }[] = []
+      if (entityType === 'student') {
+        const promises = hostels.map(h => getHostelList({ hostel_name: h, start: 1, num_students: 1000 }).then(res => ({ h, res: res as { studentsList?: string[][] } })).catch(() => ({ h, res: {} })))
+        const results = await Promise.all(promises)
+        for (const { h, res } of results) {
+          if (res?.studentsList) {
+            for (const row of res.studentsList) {
+              newList.push({ name: row[0] || '', id: row[1] || '', email: row[2] || '', hostel: h })
+            }
+          }
+        }
+      } else {
+        const privileges: AdminPrivilegeApiValue[] = ['super_user', 'top_privelege', 'gaurd']
+        const promises = privileges.map(priv => getAdminList({ admin_privelege_name: priv, start: 1, num_users: 1000 }).then(res => ({ priv, res: res as { usersList?: string[][] } })).catch(() => ({ priv, res: {} })))
+        const results = await Promise.all(promises)
+        for (const { priv, res } of results) {
+          if (res?.usersList) {
+            for (const row of res.usersList) {
+              newList.push({ name: row[0] || '', email: row[1] || '', hostel: row[2] || '', privilege: priv })
+            }
+          }
+        }
+      }
+      setListData(newList)
+      setListFetchedFor(entityType)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch list')
+    } finally {
+      setLoadingList(false)
+    }
+  }
+
   return (
     <div style={layout}>
       <div style={card}>
@@ -474,6 +515,43 @@ export default function ManageEdit({ fixedEntityType }: ManageEditProps) {
               {entityType === 'student' ? 'Upload student CSV' : 'Upload admin CSV'}
             </button>
             {csvResult && <pre style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: 8, overflow: 'auto' }}>{csvResult}</pre>}
+          </section>
+          <section>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>View {entityType}s List</span>
+              <button type="button" style={{ ...secondaryButton, padding: '0.5rem 1rem', fontSize: '0.9rem' }} onClick={handleLoadList} disabled={loadingList}>
+                {loadingList ? 'Loading...' : 'Load List'}
+              </button>
+            </h2>
+            {listFetchedFor === entityType && listData.length > 0 && (
+              <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: 8, overflowX: 'auto' }}>
+                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                      <th style={{ padding: '0.5rem' }}>Name</th>
+                      <th style={{ padding: '0.5rem' }}>Email</th>
+                      {entityType === 'student' && <th style={{ padding: '0.5rem' }}>Entry Number</th>}
+                      <th style={{ padding: '0.5rem' }}>Hostel</th>
+                      {entityType === 'admin' && <th style={{ padding: '0.5rem' }}>Privilege</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listData.map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '0.5rem' }}>{item.name}</td>
+                        <td style={{ padding: '0.5rem' }}>{item.email}</td>
+                        {entityType === 'student' && <td style={{ padding: '0.5rem' }}>{item.id}</td>}
+                        <td style={{ padding: '0.5rem' }}>{item.hostel}</td>
+                        {entityType === 'admin' && <td style={{ padding: '0.5rem' }}>{item.privilege}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {listFetchedFor === entityType && listData.length === 0 && !loadingList && (
+              <p style={{ color: '#9ca3af', marginTop: '0.5rem' }}>No {entityType}s found.</p>
+            )}
           </section>
             </div>
           </div>
