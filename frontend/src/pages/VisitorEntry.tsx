@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { invite, type InviteBody } from '../api/endpoints'
-import { layout, card, inputStyle, primaryButton, secondaryButton } from '../styles/common'
+import { layout, card, inputStyle, primaryButton, secondaryButton, logoCircle, brandMark } from '../styles/common'
 import QRCode from 'qrcode'
-
+import collegeLogo from '../assets/IIT Ropar.png'
 export default function VisitorEntry() {
   const navigate = useNavigate()
   const [guestName, setGuestName] = useState('')
@@ -87,19 +87,46 @@ export default function VisitorEntry() {
 
   return (
     <div style={layout}>
-      <div style={card}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
-          <button type="button" style={secondaryButton} onClick={logout}>
-            Log out
-          </button>
-        </div>
-        <h1 style={{ fontSize: '2rem', fontWeight: 700, marginTop: '0.25rem', marginBottom: '0.5rem' }}>
-          Visitor Entry
-        </h1>
-        <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
-          Invite a guest. Your account is taken from your sign-in (no email field). Optional key-value fields
-          (e.g. vehicle number).
-        </p>
+      <div
+        style={{
+          ...card,
+          minHeight: '90vh',
+          position: 'relative',
+        }}
+      >
+        <button 
+          type="button" 
+          style={{ 
+            ...secondaryButton, 
+            position: 'absolute',
+            top: '1.5rem',
+            right: '2rem',
+          }} 
+          onClick={logout}
+        >
+          Log out
+        </button>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            columnGap: '3rem',
+            alignItems: 'flex-start',
+            width: '100%',
+            minHeight: '74vh',
+            paddingTop: '2rem',
+          }}
+        >
+          {/* Left: form */}
+          <div>
+            <div style={{ ...brandMark, marginBottom: '3rem' }}>HOSTEL SECURITY</div>
+            <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+              Visitor Entry
+            </h1>
+            <p style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem' }}>
+              Invite a guest. Optional key-value fields
+              (e.g. vehicle number).
+            </p>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gap: '0.9rem', marginBottom: '1.5rem' }}>
             <div style={{ display: 'grid', gap: '0.35rem' }}>
@@ -174,6 +201,13 @@ export default function VisitorEntry() {
             </p>
           </div>
         )}
+          </div>
+          
+          {/* Right: logo */}
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <img src={collegeLogo} alt="College logo" style={logoCircle} />
+          </div>
+        </div>
       </div>
     </div>
   )

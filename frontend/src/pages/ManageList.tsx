@@ -48,7 +48,7 @@ export default function ManageList() {
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', maxWidth: '700px' }}>
               <Link to="/admin/cameras" style={linkStyle}>
-                Cameras & hostels
+                Cameras
               </Link>
               <Link to="/admin/manage/add-hostel" style={secLinkStyle}>
                 Hostel
