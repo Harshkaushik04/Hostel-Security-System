@@ -11,6 +11,7 @@ type StreamItem = {
   label: string
   stream: MediaStream
   cameraName: string
+  hostelName?: string
 }
 
 
@@ -20,28 +21,8 @@ export default function LiveFeed() {
   const [streams, setStreams] = useState<StreamItem[]>([])
 
 
-  const [cameraMap, setCameraMap] = useState<Record<string, string>>({})
   const [focusCameraInput, setFocusCameraInput] = useState('')
   const [focusHint, setFocusHint] = useState('')
-
-  useEffect(() => {
-    getCamerasList()
-      .then((res) => {
-        if ('cameras' in res && Array.isArray(res.cameras)) {
-          const map: Record<string, string> = {}
-          for (const cam of res.cameras) {
-            map[cam.cameraName] = cam.hostelName
-          }
-          console.log('LiveFeed loaded camera map:', map)
-          setCameraMap(map)
-        } else {
-          console.warn('LiveFeed getCamerasList returned unexpected response:', res)
-        }
-      })
-      .catch((err) => {
-        console.error('LiveFeed failed to fetch cameras list:', err)
-      })
-  }, [])
   const [connected, setConnected] = useState(false)
   const [buttonPressed, setButtonPressed] = useState(false)
   const [error, setError] = useState('')
@@ -140,7 +121,7 @@ export default function LiveFeed() {
           }
           ws.send(JSON.stringify(send_message))
         } else if (json_message.type === 'invitation-to-consume') {
-          const { cameraName, producerId } = json_message.params
+          const { cameraName, producerId, hostelName } = json_message.params
           const cameraNumber = Number(cameraName.slice(6))
 
           if (!recvTransportRef.current) return
@@ -160,6 +141,7 @@ export default function LiveFeed() {
                 label: `Camera ${cameraNumber}`,
                 stream,
                 cameraName,
+                hostelName,
               }
               return [...prev, item]
             })
@@ -404,7 +386,7 @@ export default function LiveFeed() {
                   }}
                 >
                   <div style={{ fontWeight: 600 }}>
-                    {item.label} {cameraMap[item.cameraName] ? `— ${cameraMap[item.cameraName]}` : ''}
+                    {item.label} {item.hostelName ? `— ${item.hostelName}` : ''}
                   </div>
                   <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
                     Double-click to expand / exit browser fullscreen

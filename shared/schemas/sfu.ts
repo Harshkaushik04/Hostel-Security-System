@@ -24,7 +24,8 @@ export const afterCanConsumeParamsSchema=z.object({
     kind:z.any(),
     producerId:z.string(),
     rtpParameters:z.any(),
-    cameraName:z.string()
+    cameraName:z.string(),
+    hostelName:z.string().optional()
 })
 
 export const invitationToConsumeToFrontendSchema=z.object({

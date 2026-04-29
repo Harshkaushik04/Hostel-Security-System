@@ -277,12 +277,14 @@ async function run() {
                         consumers:mpp,
                         allocatedHostel:allocatedHostel
                     });
+                    const camDoc = await CamerasModel.findOne({ cameraName });
                     const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                         id:consumer.id,
                         kind:consumer.kind,
                         producerId:producer.id,
                         rtpParameters:consumer.rtpParameters,
-                        cameraName:cameraName
+                        cameraName:cameraName,
+                        hostelName: camDoc ? camDoc.hostelName : "Unknown Hostel"
                     }
                     console.log("/stream-started: send invitation-to-consume for ",cameraName)
                     const send_message:CustomTypes.sfu.invitationToConsumeToFrontendType={
@@ -472,12 +474,14 @@ async function run() {
                                 consumers:mpp,
                                 allocatedHostel:allocatedHostel
                             });
+                            const camDoc = await CamerasModel.findOne({ cameraName });
                             const sendParams:CustomTypes.sfu.afterCanConsumeParamsTypeActual={
                                 id:consumer.id,
                                 kind:consumer.kind,
                                 producerId:producer.id,
                                 rtpParameters:consumer.rtpParameters,
-                                cameraName:cameraName
+                                cameraName:cameraName,
+                                hostelName: camDoc ? camDoc.hostelName : "Unknown Hostel"
                             }
                             console.log("ws: send invitation-to-come: for ",cameraName)
                             const send_message:CustomTypes.sfu.invitationToConsumeToFrontendType={
